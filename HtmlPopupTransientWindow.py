@@ -1,4 +1,3 @@
-
 # coding=utf-8
 
 import wx
@@ -13,7 +12,9 @@ class HtmlPopupTransientWindow(wx.PopupTransientWindow):
         panel.SetBackgroundColour(bgcolor)
 
         html_window = self.HtmlWindow(panel, wx.ID_ANY, size=size)
-        html_window.SetPage('<body bgcolor="' + bgcolor + '">' + html_body_content + '</body>')
+        html_window.SetPage(
+            '<body bgcolor="' + bgcolor + '">' + html_body_content + "</body>"
+        )
 
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(html_window, 0, wx.ALL, 5)

@@ -16,10 +16,10 @@ from serial.tools import list_ports
 import locale
 
 # see https://discuss.wxpython.org/t/wxpython4-1-1-python3-8-locale-wxassertionerror/35168
-locale.setlocale(locale.LC_ALL, 'C')
+locale.setlocale(locale.LC_ALL, "C")
 
 __version__ = "5.1.0"
-__flash_help__ = '''
+__flash_help__ = """
 <p>This setting is highly dependent on your device!<p>
 <p>
   Details at <a style="color: #004CE5;"
@@ -32,7 +32,7 @@ __flash_help__ = '''
   <li>ESP8285 requires DOUT.</li>
 </ul>
 </p>
-'''
+"""
 __auto_select__ = "Auto-select"
 __auto_select_explanation__ = "(first port with Espressif device)"
 __supported_baud_rates__ = [9600, 57600, 74880, 115200, 230400, 460800, 921600]
@@ -50,7 +50,7 @@ class RedirectText:
             # carriage return -> remove last line i.e. reset position to start of last line
             current_value = self.__out.GetValue()
             last_newline = current_value.rfind("\n")
-            new_value = current_value[:last_newline + 1]  # preserve \n
+            new_value = current_value[: last_newline + 1]  # preserve \n
             new_value += string[1:]  # chop off leading \r
             wx.CallAfter(self.__out.SetValue, new_value)
         else:
@@ -65,6 +65,7 @@ class RedirectText:
     # noinspection PyMethodMayBeStatic
     def isatty(self):
         return True
+
 
 # ---------------------------------------------------------------------------
 
@@ -85,13 +86,22 @@ class FlashingThread(threading.Thread):
                 command.append("--port")
                 command.append(self._config.port)
 
-            command.extend(["--baud", str(self._config.baud),
-                            "--after", "no_reset",
-                            "write_flash",
-                            # https://github.com/espressif/esptool/issues/599
-                            "--flash_size", "detect",
-                            "--flash_mode", self._config.mode,
-                            "0x00000", self._config.firmware_path])
+            command.extend(
+                [
+                    "--baud",
+                    str(self._config.baud),
+                    "--after",
+                    "no_reset",
+                    "write_flash",
+                    # https://github.com/espressif/esptool/issues/599
+                    "--flash_size",
+                    "detect",
+                    "--flash_mode",
+                    self._config.mode,
+                    "0x00000",
+                    self._config.firmware_path,
+                ]
+            )
 
             if self._config.erase_before_flash:
                 command.append("--erase-all")
@@ -102,8 +112,10 @@ class FlashingThread(threading.Thread):
 
             # The last line printed by esptool is "Staying in bootloader." -> some indication that the process is
             # done is needed
-            print("\nFirmware successfully flashed. Unplug/replug or reset device \nto switch back to normal boot "
-                  "mode.")
+            print(
+                "\nFirmware successfully flashed. Unplug/replug or reset device \nto switch back to normal boot "
+                "mode."
+            )
         except SerialException as e:
             self._parent.report_error(e.strerror)
             raise e
@@ -126,26 +138,27 @@ class FlashConfig:
     def load(cls, file_path):
         conf = cls()
         if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 data = json.load(f)
-            conf.port = data['port']
-            conf.baud = data['baud']
-            conf.mode = data['mode']
-            conf.erase_before_flash = data['erase']
+            conf.port = data["port"]
+            conf.baud = data["baud"]
+            conf.mode = data["mode"]
+            conf.erase_before_flash = data["erase"]
         return conf
 
     def safe(self, file_path):
         data = {
-            'port': self.port,
-            'baud': self.baud,
-            'mode': self.mode,
-            'erase': self.erase_before_flash,
+            "port": self.port,
+            "baud": self.baud,
+            "mode": self.mode,
+            "erase": self.erase_before_flash,
         }
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             json.dump(data, f)
 
     def is_complete(self):
         return self.firmware_path is not None and self.port is not None
+
 
 # ---------------------------------------------------------------------------
 
@@ -154,9 +167,17 @@ class FlashConfig:
 class NodeMcuFlasher(wx.Frame):
 
     def __init__(self, parent, title):
-        wx.Frame.__init__(self, parent, -1, title, size=(725, 650),
-                          style=wx.DEFAULT_FRAME_STYLE | wx.NO_FULL_REPAINT_ON_RESIZE)
+        wx.Frame.__init__(
+            self,
+            parent,
+            -1,
+            title,
+            size=(725, 650),
+            style=wx.DEFAULT_FRAME_STYLE | wx.NO_FULL_REPAINT_ON_RESIZE,
+        )
         self._config = FlashConfig.load(self._get_config_file_path())
+
+        self.info_popup_window = None
 
         self._build_status_bar()
         self._set_icons()
@@ -209,12 +230,11 @@ class NodeMcuFlasher(wx.Frame):
 
         # Fix popup that never goes away.
         def onHover(event):
-            global hovered
-            if(len(hovered) != 0 ):
-                hovered[0].Dismiss() 
-                hovered = []
+            if self.info_popup_window:  # Verifica se a janela existe
+                self.info_popup_window.Dismiss()
+                self.info_popup_window = None  # Limpa a referência
 
-        panel.Bind(wx.EVT_MOTION,onHover)
+        panel.Bind(wx.EVT_MOTION, onHover)
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -239,7 +259,9 @@ class NodeMcuFlasher(wx.Frame):
 
         def add_baud_radio_button(sizer, index, baud_rate):
             style = wx.RB_GROUP if index == 0 else 0
-            radio_button = wx.RadioButton(panel, name="baud-%d" % baud_rate, label="%d" % baud_rate, style=style)
+            radio_button = wx.RadioButton(
+                panel, name="baud-%d" % baud_rate, label="%d" % baud_rate, style=style
+            )
             radio_button.rate = baud_rate
             # sets default value
             radio_button.SetValue(baud_rate == self._config.baud)
@@ -254,7 +276,9 @@ class NodeMcuFlasher(wx.Frame):
 
         def add_flash_mode_radio_button(sizer, index, mode, label):
             style = wx.RB_GROUP if index == 0 else 0
-            radio_button = wx.RadioButton(panel, name="mode-%s" % mode, label="%s" % label, style=style)
+            radio_button = wx.RadioButton(
+                panel, name="mode-%s" % mode, label="%s" % label, style=style
+            )
             radio_button.Bind(wx.EVT_RADIOBUTTON, on_mode_changed)
             radio_button.mode = mode
             radio_button.SetValue(mode == self._config.mode)
@@ -269,7 +293,12 @@ class NodeMcuFlasher(wx.Frame):
 
         def add_erase_radio_button(sizer, index, erase_before_flash, label, value):
             style = wx.RB_GROUP if index == 0 else 0
-            radio_button = wx.RadioButton(panel, name="erase-%s" % erase_before_flash, label="%s" % label, style=style)
+            radio_button = wx.RadioButton(
+                panel,
+                name="erase-%s" % erase_before_flash,
+                label="%s" % label,
+                style=style,
+            )
             radio_button.Bind(wx.EVT_RADIOBUTTON, on_erase_changed)
             radio_button.erase = erase_before_flash
             radio_button.SetValue(value)
@@ -278,14 +307,24 @@ class NodeMcuFlasher(wx.Frame):
 
         erase = self._config.erase_before_flash
         add_erase_radio_button(erase_boxsizer, 0, False, "no", erase is False)
-        add_erase_radio_button(erase_boxsizer, 1, True, "yes, wipes all data", erase is True)
+        add_erase_radio_button(
+            erase_boxsizer, 1, True, "yes, wipes all data", erase is True
+        )
 
         button = wx.Button(panel, -1, "Flash NodeMCU")
         button.Bind(wx.EVT_BUTTON, on_clicked)
 
-        self.console_ctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL)
-        self.console_ctrl.SetFont(wx.Font((0, 13), wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL,
-                                          wx.FONTWEIGHT_NORMAL))
+        self.console_ctrl = wx.TextCtrl(
+            panel, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL
+        )
+        self.console_ctrl.SetFont(
+            wx.Font(
+                (0, 13),
+                wx.FONTFAMILY_TELETYPE,
+                wx.FONTSTYLE_NORMAL,
+                wx.FONTWEIGHT_NORMAL,
+            )
+        )
         self.console_ctrl.SetBackgroundColour(wx.WHITE)
         self.console_ctrl.SetForegroundColour(wx.BLUE)
         self.console_ctrl.SetDefaultStyle(wx.TextAttr(wx.BLUE))
@@ -296,19 +335,18 @@ class NodeMcuFlasher(wx.Frame):
         flashmode_label = wx.StaticText(panel, label="Flash mode")
 
         def on_info_hover(event):
-            global hovered
-            if(len(hovered) == 0):
+            # Não precisa mais de 'global hovered'
+            if not self.info_popup_window:  # Verifica se NENHUMA janela existe
                 from HtmlPopupTransientWindow import HtmlPopupTransientWindow
                 win = HtmlPopupTransientWindow(self, wx.SIMPLE_BORDER, __flash_help__, "#FFB6C1", (410, 140))
-                
+
                 image = event.GetEventObject()
                 image_position = image.ClientToScreen((0, 0))
                 image_size = image.GetSize()
                 win.Position(image_position, (0, image_size[1]))
 
                 win.Popup()
-                hovered = [win]
-
+                self.info_popup_window = win # <-- AJUSTE AQUI
 
         icon = wx.StaticBitmap(panel, wx.ID_ANY, images.Info.GetBitmap())
         icon.Bind(wx.EVT_MOTION, on_info_hover)
@@ -321,14 +359,24 @@ class NodeMcuFlasher(wx.Frame):
         erase_label = wx.StaticText(panel, label="Erase flash")
         console_label = wx.StaticText(panel, label="Console")
 
-        fgs.AddMany([
-                    port_label, (serial_boxsizer, 1, wx.EXPAND),
-                    file_label, (file_picker, 1, wx.EXPAND),
-                    baud_label, baud_boxsizer,
-                    flashmode_label_boxsizer, flashmode_boxsizer,
-                    erase_label, erase_boxsizer,
-                    (wx.StaticText(panel, label="")), (button, 1, wx.EXPAND),
-                    (console_label, 1, wx.EXPAND), (self.console_ctrl, 1, wx.EXPAND)])
+        fgs.AddMany(
+            [
+                port_label,
+                (serial_boxsizer, 1, wx.EXPAND),
+                file_label,
+                (file_picker, 1, wx.EXPAND),
+                baud_label,
+                baud_boxsizer,
+                flashmode_label_boxsizer,
+                flashmode_boxsizer,
+                erase_label,
+                erase_boxsizer,
+                (wx.StaticText(panel, label="")),
+                (button, 1, wx.EXPAND),
+                (console_label, 1, wx.EXPAND),
+                (self.console_ctrl, 1, wx.EXPAND),
+            ]
+        )
         fgs.AddGrowableRow(6, 1)
         fgs.AddGrowableCol(1, 1)
         hbox.Add(fgs, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
@@ -364,16 +412,18 @@ class NodeMcuFlasher(wx.Frame):
         # File menu
         file_menu = wx.Menu()
         wx.App.SetMacExitMenuItemId(wx.ID_EXIT)
-        exit_item = file_menu.Append(wx.ID_EXIT, "E&xit\tCtrl-Q", "Exit NodeMCU PyFlasher")
+        exit_item = file_menu.Append(
+            wx.ID_EXIT, "E&xit\tCtrl-Q", "Exit NodeMCU PyFlasher"
+        )
         exit_item.SetBitmap(images.Exit.GetBitmap())
         self.Bind(wx.EVT_MENU, self._on_exit_app, exit_item)
         self.menuBar.Append(file_menu, "&File")
 
         # Help menu
         help_menu = wx.Menu()
-        help_item = help_menu.Append(wx.ID_ABOUT, '&About NodeMCU PyFlasher', 'About')
+        help_item = help_menu.Append(wx.ID_ABOUT, "&About NodeMCU PyFlasher", "About")
         self.Bind(wx.EVT_MENU, self._on_help_about, help_item)
-        self.menuBar.Append(help_menu, '&Help')
+        self.menuBar.Append(help_menu, "&Help")
 
         self.SetMenuBar(self.menuBar)
 
@@ -388,6 +438,7 @@ class NodeMcuFlasher(wx.Frame):
 
     def _on_help_about(self, event):
         from About import AboutDlg
+
         about = AboutDlg(self)
         about.ShowModal()
         about.Destroy()
@@ -398,16 +449,21 @@ class NodeMcuFlasher(wx.Frame):
     def log_message(self, message):
         self.console_ctrl.AppendText(message)
 
+
 # ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
 class MySplashScreen(wx.adv.SplashScreen):
     def __init__(self):
-        global hovered
-        hovered = []
-        wx.adv.SplashScreen.__init__(self, images.Splash.GetBitmap(),
-                                     wx.adv.SPLASH_CENTRE_ON_SCREEN | wx.adv.SPLASH_TIMEOUT, 2500, None, -1)
+        wx.adv.SplashScreen.__init__(
+            self,
+            images.Splash.GetBitmap(),
+            wx.adv.SPLASH_CENTRE_ON_SCREEN | wx.adv.SPLASH_TIMEOUT,
+            2500,
+            None,
+            -1,
+        )
         self.Bind(wx.EVT_CLOSE, self._on_close)
         self.__fc = wx.CallLater(2000, self._show_main)
 
@@ -428,6 +484,7 @@ class MySplashScreen(wx.adv.SplashScreen):
         frame.Show()
         if self.__fc.IsRunning():
             self.Raise()
+
 
 # ---------------------------------------------------------------------------
 
@@ -458,10 +515,11 @@ class App(wx.App, wx.lib.mixins.inspection.InspectionMixin):
 def main():
     app = App(False)
     app.MainLoop()
+
+
 # ---------------------------------------------------------------------------
 
 
-if __name__ == '__main__':
-    __name__ = 'Main'
+if __name__ == "__main__":
+    __name__ = "Main"
     main()
-

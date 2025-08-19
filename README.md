@@ -1,71 +1,55 @@
-# NodeMCU PyFlasher
-[![License](https://marcelstoer.github.io/nodemcu-pyflasher/images/mit-license-badge.svg)](https://github.com/marcelstoer/nodemcu-pyflasher/blob/master/LICENSE)
-[![Github Downloads (all assets, all releases)](https://img.shields.io/github/downloads/marcelstoer/nodemcu-pyflasher/total.svg?style=flat)](https://github.com/marcelstoer/nodemcu-pyflasher/releases)
-[![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/marcelstoer/nodemcu-pyflasher/latest/total?style=flat)](https://github.com/marcelstoer/nodemcu-pyflasher/releases)
-[![PayPal Donation](https://img.shields.io/badge/donate_through-PayPal-%23009cde?logo=paypal)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=HFN4ZMET5XS2Q)
+# SerialHub 🛠️
 
-Self-contained [NodeMCU](https://github.com/nodemcu/nodemcu-firmware) flasher with GUI based on [esptool.py](https://github.com/espressif/esptool) and [wxPython](https://www.wxpython.org/).
+[![Status do Projeto](https://img.shields.io/badge/status-desenvolvimento%20ativo-green.svg)](https://github.com/WigoWigo10/SerialHub/issues)
+[![Licença](https://img.shields.io/badge/license-MIT-blue.svg)](/LICENSE)
+[![Construído com](https://img.shields.io/badge/construído%20com-Python%20&%20wxPython-orange.svg)](#)
 
-![Image of NodeMCU PyFlasher GUI](images/gui.png)
+Um kit de ferramentas multifuncional para gravação de firmware e comunicação serial com microcontroladores ESP8266 & ESP32.
 
-## Installation
-NodeMCU PyFlasher doesn't have to be installed, just double-click it and it'll start. Check the [releases section](https://github.com/marcelstoer/nodemcu-pyflasher/releases) for downloads for your platform. For every release there's at least a .exe file for Windows. Starting from 3.0 there's also a .dmg for macOS.
+![Imagem da Interface do SerialHub](images/gui.png)
 
-## Status
-Scan the [list of open issues](https://github.com/marcelstoer/nodemcu-pyflasher/issues) for bugs and pending features.
+> **Nota do Mantenedor:**
+> Este projeto é um *fork* do aclamado [nodemcu-pyflasher](https://github.com/marcelstoer/nodemcu-pyflasher), criado originalmente por [Marcel Stör](https://github.com/marcelstoer). O objetivo deste fork é modernizar a base de código, expandir as funcionalidades para além da gravação de firmware e manter o projeto ativamente para a comunidade de IoT. Todo o crédito pelo trabalho fundamental e pela ideia original pertence a Marcel.
 
-**Note**
+---
 
-This is my first Python project. If you have constructive feedback as for how to improve the code please do reach out to me.
+## ✨ Principais Funcionalidades
 
-## Getting help
-In the unlikely event that you're stuck with this simple tool the best way to get help is to turn to the ["Tools and IDE" subforum on esp8266.com](http://www.esp8266.com/viewforum.php?f=22).
+* **Interface Gráfica Simples:** Esqueça a linha de comando. Uma UI intuitiva para facilitar a gravação.
+* **Detecção de Porta Serial:** Listagem automática das portas seriais disponíveis.
+* **Configuração Flexível:** Ajuste fácil de Baud Rate, Modo de Flash e opção de apagar a memória.
+* **Autocontido:** Executáveis para Windows e macOS que não exigem instalação de Python.
+* **Console Integrado:** Visualize a saída do processo de gravação em tempo real.
 
-## Donationware
-All open-source development by the author is donationware. Show your love and support for open-source development by donating to the good cause through PayPal.
+---
 
-[![PayPal Donations](./images/paypal-256.png)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=HFN4ZMET5XS2Q)
+## 🗺️ Roteiro (Roadmap)
 
-## Build it yourself
-If you want to build this application yourself you need to:
+**SerialHub** está em desenvolvimento ativo com o objetivo de se tornar uma ferramenta completa. Os próximos passos incluem:
 
-- Install [Python 3.x](https://www.python.org/downloads/) and [Pip](https://pip.pypa.io/en/stable/installing/) (it comes with Python if installed from `python.org`).
-- Create a virtual environment with `python -m venv venv`
-- Activate the virtual environment with `. venv/bin/activate` (`. venv/Scripts/activate` if you are on Windows with [Cygwin](https://www.cygwin.com/) or [Mingw](http://mingw.org/))
-- Run `pip install -r requirements.txt`
+-   [ ] **Terminal Serial Integrado:** Para visualizar e interagir com a saída do seu dispositivo após a gravação.
+-   [ ] **Suporte Completo à Família ESP32:** Seleção explícita de chips (ESP32, S3, C3, etc.) e opções específicas.
+-   [ ] **Gerenciador de Firmware:** Para baixar as versões mais recentes de firmwares populares (MicroPython, CircuitPython).
+-   [ ] **Tema Escuro (Dark Mode):** Uma alternativa de interface para melhor conforto visual.
+-   [ ] **Internacionalização (i18n):** Suporte para múltiplos idiomas.
+-   [ ] **(Longo Prazo)** Refatoração do Frontend com tecnologias modernas como React + Electron.
 
-**A note on Linux:** As described on the [downloads section of `wxPython`](https://www.wxpython.org/pages/downloads/), wheels for Linux are complicated and may require you to run something like this to install `wxPython` correctly:
+---
 
-```bash
-# Assuming you are running it on Ubuntu 18.04 LTS with GTK3
-pip install -U \
-    -f https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-18.04 \
-    wxPython
-```
+## 🚀 Instalação
 
-## Why this project exists
+A maneira mais fácil de usar o **SerialHub** é baixar a versão mais recente para o seu sistema operacional na [página de Releases](https://github.com/SEU-USUARIO/SerialHub/releases). Não é necessário instalar, basta executar!
 
-### Motivation
-This addresses an issue the NodeMCU community touched on several times in the past, most recently at
- [#1500 (comment)](https://github.com/nodemcu/nodemcu-firmware/pull/1500#issuecomment-247884981).
+---
 
-I stated that based on my experience doing NodeMCU user support it should be a lot simpler to flash NodeMCU for Windows users.
+## 🤝 Como Contribuir
 
-- A number of flashing tools are available but only two are actively maintained: esptool-ck and esptool.py. Only one is endorsed by Espressif: [esptool.py](https://github.com/espressif/esptool) (they hired the developer(s)).
-- 70% of the users of my [nodemcu-build.com](https://nodemcu-build.com) service are on Windows.
-- BUT Windows doesn't come with Python installed - which is required for esptool.py.
-- BUT Windows users in general are more reluctant to use the CLI than Linux/Mac users - which is required for esptool.py.
+Contribuições são muito bem-vindas! Se você tem ideias para novas funcionalidades, encontrou um bug ou quer ajudar a desenvolver, este é o lugar certo.
 
-To conclude: this is not a comfortable situation for NodeMCU's largest user group.
+Por favor, leia nosso guia de contribuição em `CONTRIBUTING.md` para começar.
 
-### The plan
-For quite a while I planned to write a self-contained GUI tool which would use esptool.py in the background. It should primarily target Windows users but since I'm on Mac it should be cross-platform. Even though I had never used Python before I felt confident to pull this off.
+---
 
-### Implementation
-- Uses the cross-platform wxPython GUI framework. I also tried PyForms/PyQt4 but settled for wxPython.
-- Requires absolutely minimal user input.
-- The esptool.py "console" output is redirected to text control on the GUI.
-- Uses [PyInstaller](https://github.com/pyinstaller/pyinstaller) to create self-contained executable for Windows and Mac. The packaged app can run standalone i.e. without installing itself, a Python interpreter or any modules.
+## 📜 Licença
 
-## License
-[MIT](http://opensource.org/licenses/MIT) © Marcel Stör
+Este projeto é distribuído sob a licença **MIT**. Veja o arquivo [LICENSE](/LICENSE) para mais detalhes.

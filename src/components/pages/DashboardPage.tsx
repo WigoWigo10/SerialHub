@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { 
-  Cpu, MemoryStick, Wifi, Server, AlertTriangle, CheckCircle2, LayoutDashboard,
+  Cpu, MemoryStick, AlertTriangle, CheckCircle2, LayoutDashboard,
   Layers, Zap, MonitorPlay, BrainCircuit, Battery, BatteryCharging, Plug, Bluetooth, Globe,
   ArrowUpCircle, ArrowDownCircle, Activity, History
 } from "lucide-react";
@@ -126,11 +126,11 @@ export function DashboardPage() {
     return `${gb.toFixed(1)} GB`;
   };
 
-  const getLoadColor = (value: number) => {
-    if (value > 80) return "text-red-500";
-    if (value > 50) return "text-yellow-500";
-    return "text-emerald-500";
-  };
+  //const getLoadColor = (value: number) => {
+    //if (value > 80) return "text-red-500";
+    //if (value > 50) return "text-yellow-500";
+    //return "text-emerald-500";
+  //};
 
   const getBatteryColor = (percent: number) => {
       if (percent < 20) return "text-red-500 bg-red-100 dark:bg-red-900/20";

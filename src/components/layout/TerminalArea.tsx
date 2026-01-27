@@ -52,7 +52,7 @@ export function TerminalArea() {
   
   const [isReceiving, setIsReceiving] = useState(false);
   const [tempMessage, setTempMessage] = useState<string | null>(null);
-  const tempTimeoutRef = useRef<number | null>(null);
+  //const tempTimeoutRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -98,12 +98,12 @@ export function TerminalArea() {
     };
   }, [connected]);
 
-  const triggerTempStatus = (msg: string, duration = 2000) => {
-    setTempMessage(msg);
-    if (tempTimeoutRef.current) clearTimeout(tempTimeoutRef.current);
+  //const triggerTempStatus = (msg: string, duration = 2000) => {
+    //setTempMessage(msg);
+    //if (tempTimeoutRef.current) clearTimeout(tempTimeoutRef.current);
     // @ts-ignore
-    tempTimeoutRef.current = setTimeout(() => setTempMessage(null), duration);
-  };
+    //tempTimeoutRef.current = setTimeout(() => setTempMessage(null), duration);
+  //};
 
   useEffect(() => { showTimestampRef.current = showTimestamp; }, [showTimestamp]);
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);

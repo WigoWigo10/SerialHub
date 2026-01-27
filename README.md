@@ -68,7 +68,7 @@ Tailor the experience to your needs. Switch between English, Portuguese, and Spa
 1. **Clone the repository:**
 
 ```bash
-git clone [https://github.com/WigoWigo10/SerialHub.git](https://github.com/WigoWigo10/SerialHub.git)
+git clone https://github.com/WigoWigo10/SerialHub.git
 cd SerialHub
 ```
 

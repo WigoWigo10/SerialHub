@@ -9,15 +9,15 @@
   [![Rust](https://img.shields.io/badge/Rust-1.75+-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
   [![React](https://img.shields.io/badge/React-18.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![GitHub Stars](https://img.shields.io/github/stars/seu-usuario/SerialHub?style=social)](https://github.com/seu-usuario/SerialHub/stargazers)
+  [![GitHub Stars](https://img.shields.io/github/stars/WigoWigo10/SerialHub?style=social)](https://github.com/WigoWigo10/SerialHub/stargazers)
 
-  [Features](#✨-key-features) • [Showcase](#📸-interface-preview) • [Tech Stack](#🛠️-tech-stack) • [Getting Started](#🚀-getting-started) • [Roadmap](#🗺️-roadmap)
+  [Features](#features) • [Showcase](#showcase) • [Tech Stack](#stack) • [Getting Started](#setup) • [Roadmap](#roadmap)
 
 </div>
 
 ---
 
-## ✨ Why SerialHub?
+## <a name="features"></a>✨ Why SerialHub?
 
 Most serial terminals are either outdated or resource-heavy. **SerialHub** solves this by combining a blazing-fast **Rust** backend with a modern, responsive interface. It doesn't just show data; it monitors your entire development environment.
 
@@ -28,7 +28,7 @@ Most serial terminals are either outdated or resource-heavy. **SerialHub** solve
 
 ---
 
-## 📸 Interface Preview
+## <a name="showcase"></a>📸 Interface Preview
 
 ### 📊 Hardware & Telemetry Dashboard
 The dashboard provides a bird's-eye view of your host machine's vitals. Monitor CPU load, memory usage, and connection stability in real-time while you debug your firmware.
@@ -48,7 +48,7 @@ Tailor the experience to your needs. Switch between English, Portuguese, and Spa
 
 ---
 
-## 🛠️ Tech Stack
+## <a name="stack"></a>🛠️ Tech Stack
 
 * **Backend:** [Rust](https://www.rust-lang.org/) + [Tauri v2](https://v2.tauri.app/) (System-level performance & safety).
 * **Frontend:** [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Tailwind CSS](https://tailwindcss.com/).
@@ -57,7 +57,7 @@ Tailor the experience to your needs. Switch between English, Portuguese, and Spa
 
 ---
 
-## 🚀 Getting Started
+## <a name="setup"></a>🚀 Getting Started
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v18+)
@@ -115,7 +115,7 @@ SerialHub/
 
 ---
 
-## 🗺️ Roadmap
+## <a name="roadmap"></a>🗺️ Roadmap
 
 * [x] High-performance Serial Connection (Batching optimized)
 * [x] Hardware Telemetry Dashboard (CPU/RAM/GPU/NPU/Battery)

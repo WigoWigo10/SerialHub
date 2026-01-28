@@ -64,9 +64,15 @@ pub fn open_port(
     stop_bits: u8,
     state: State<'_, SerialState>,
 ) -> Result<String, String> {
-    // 1. FORÇA O FECHAMENTO ANTES DE ABRIR
     state.running.store(false, Ordering::Relaxed);
-    thread::sleep(Duration::from_millis(100));
+    
+    {
+        if let Ok(mut lock) = state.port.lock() {
+            *lock = None;
+        }
+    }
+
+    thread::sleep(Duration::from_millis(200)); 
 
     println!("Conectando a {}...", port_name);
 

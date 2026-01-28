@@ -141,6 +141,35 @@ export function Sidebar() {
     }
   };
 
+  const handleBaudChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newRate = Number(e.target.value);
+    setSelectedBaud(newRate);
+
+    if (activePort) {
+      console.log("Reiniciando conexão com novo Baud Rate...");
+
+      try {
+        await invoke("open_port", {
+          portName: activePort,
+          baudRate: newRate,
+          dataBits: Number(dataBits),
+          stopBits: Number(stopBits),
+          parity,
+          flowControl,
+        });
+        
+        console.log(`Baud rate atualizado para ${newRate}`);
+        setConnected(true);
+
+      } catch (error) {
+        console.error("Erro ao atualizar Baud Rate:", error);
+        setConnected(false);
+        setActivePort(null);
+        alert(`${t("alert_error_prefix")} ${error}`);
+      }
+    }
+  };
+
   const inputClass =
     "w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs rounded-md pl-2 pr-2 py-1 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors";
   const labelClass =
@@ -191,7 +220,7 @@ export function Sidebar() {
             </div>
             <select
               value={selectedBaud}
-              onChange={(e) => setSelectedBaud(Number(e.target.value))}
+              onChange={handleBaudChange}
               className={`${inputClass} pl-9 pr-8 py-2 font-mono cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 appearance-none`}
             >
               {BAUD_RATES.map((rate) => (

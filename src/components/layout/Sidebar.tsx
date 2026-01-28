@@ -141,32 +141,40 @@ export function Sidebar() {
     }
   };
 
-  const handleBaudChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleBaudChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newRate = Number(e.target.value);
     setSelectedBaud(newRate);
+    updateConnection({ baud: newRate });
+  };
 
-    if (activePort) {
-      console.log("Reiniciando conexão com novo Baud Rate...");
+  const updateConnection = async (overrides: {
+    baud?: number;
+    data?: number;
+    stop?: number;
+    parity?: string;
+    flow?: string;
+  }) => {
+    // Se não tiver porta ativa, não faz nada de rede, só atualiza estado visual (feito fora daqui)
+    if (!activePort) return;
 
-      try {
-        await invoke("open_port", {
-          portName: activePort,
-          baudRate: newRate,
-          dataBits: Number(dataBits),
-          stopBits: Number(stopBits),
-          parity,
-          flowControl,
-        });
-        
-        console.log(`Baud rate atualizado para ${newRate}`);
-        setConnected(true);
+    console.log("Atualizando configurações da porta...");
 
-      } catch (error) {
-        console.error("Erro ao atualizar Baud Rate:", error);
-        setConnected(false);
-        setActivePort(null);
-        alert(`${t("alert_error_prefix")} ${error}`);
-      }
+    try {
+      await invoke("open_port", {
+        portName: activePort,
+        // Usa o valor do override SE existir, senão usa o do estado atual
+        baudRate: overrides.baud ?? selectedBaud,
+        dataBits: overrides.data ?? dataBits,
+        stopBits: overrides.stop ?? stopBits,
+        parity: overrides.parity ?? parity,
+        flowControl: overrides.flow ?? flowControl,
+      });
+      setConnected(true);
+    } catch (error) {
+      console.error("Erro ao atualizar config:", error);
+      setConnected(false);
+      setActivePort(null);
+      alert(`${t("alert_error_prefix")} ${error}`);
     }
   };
 
@@ -295,7 +303,11 @@ export function Sidebar() {
                   <label className={labelClass}>{t("data_bits")}</label>
                   <select
                     value={dataBits}
-                    onChange={(e) => setDataBits(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setDataBits(val);
+                      updateConnection({ data: val });
+                    }}
                     className={inputClass}
                   >
                     <option value="8">8</option>
@@ -306,7 +318,11 @@ export function Sidebar() {
                   <label className={labelClass}>{t("stop_bits")}</label>
                   <select
                     value={stopBits}
-                    onChange={(e) => setStopBits(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setStopBits(val);
+                      updateConnection({ stop: val });
+                    }}
                     className={inputClass}
                   >
                     <option value="1">1</option>
@@ -318,7 +334,11 @@ export function Sidebar() {
                   <label className={labelClass}>{t("parity")}</label>
                   <select
                     value={parity}
-                    onChange={(e) => setParity(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setParity(val);
+                      updateConnection({ parity: val });
+                    }}
                     className={inputClass}
                   >
                     <option value="None">{t("opt_none")}</option>
@@ -331,7 +351,11 @@ export function Sidebar() {
                   <label className={labelClass}>{t("flow")}</label>
                   <select
                     value={flowControl}
-                    onChange={(e) => setFlowControl(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFlowControl(val);
+                      updateConnection({ flow: val });
+                    }}
                     className={inputClass}
                   >
                     <option value="None">{t("opt_none")}</option>

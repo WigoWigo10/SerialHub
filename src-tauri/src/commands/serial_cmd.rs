@@ -186,22 +186,18 @@ pub fn write_serial(
     content: String,
     state: State<'_, SerialState>,
 ) -> Result<usize, String> {
-    let mut state_port = state.port.lock().map_err(|_| "Lock fail")?;
+    let mut port_guard = state.port.lock().map_err(|e| e.to_string())?;
 
-    if let Some(port) = state_port.as_mut() {
+    if let Some(port) = port_guard.as_mut() {
         let bytes = content.as_bytes();
         match port.write(bytes) {
             Ok(size) => {
-                // --- GRAVAÇÃO NO ARQUIVO COM TAG ---
                 if let Ok(mut lock) = state.log_file.lock() {
                     if let Some(file) = lock.as_mut() {
-                        // 1. Escreve a TAG para identificar que fomos NÓS que enviamos
                         let _ = file.write_all(b"\n>>> [TX] ");
-
-                        // 2. Escreve o conteúdo
+                        
                         let _ = file.write_all(bytes);
 
-                        // 3. (Opcional) Se o comando não tiver quebra de linha, adiciona uma para o log não ficar bagunçado
                         if !bytes.ends_with(b"\n") {
                             let _ = file.write_all(b"\n");
                         }
@@ -209,8 +205,7 @@ pub fn write_serial(
                         let _ = file.flush();
                     }
                 }
-
-                let _ = app.emit("serial-sent", bytes);
+                let _ = app.emit("serial-tx", size);
                 Ok(size)
             }
             Err(e) => Err(format!("Erro escrita: {}", e)),

@@ -88,17 +88,12 @@ export function DashboardPage() {
   }, [connected, connectionStartTime]);
 
   useEffect(() => {
-    const unlistenRx = listen<any>("serial-data", (event) => {
-      const len = event.payload.length || 0;
-      addRxBytes(len);
-    });
     const unlistenTx = listen<any>("serial-sent", (event) => {
       const len = event.payload.length || 0;
       addTxBytes(len);
     });
 
     return () => { 
-      unlistenRx.then(f => f()); 
       unlistenTx.then(f => f()); 
     };
   }, [addRxBytes, addTxBytes]);

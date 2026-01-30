@@ -12,6 +12,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { useLanguage } from "./hooks/useLanguage";
 import { Toaster } from "react-hot-toast";
 import { Bluetooth, Bug } from "lucide-react";
+import { useDataMonitor } from "./hooks/useDataMonitor";
 
 const EmptyWorkspace = ({
   icon: Icon,
@@ -34,6 +35,7 @@ const EmptyWorkspace = ({
 );
 
 function App() {
+  useDataMonitor();
   const { activityMode, isSidebarOpen, theme } = useSettingsStore();
   const { t } = useLanguage();
 

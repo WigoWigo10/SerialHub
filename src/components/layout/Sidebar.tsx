@@ -184,7 +184,7 @@ export function Sidebar() {
     "text-[9px] text-slate-500 dark:text-slate-400 font-bold tracking-wider";
 
   return (
-    <aside className="w-64 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-all overflow-hidden animate-in slide-in-from-left-2 duration-300">
+    <aside className="w-full h-full bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
         <div className="flex justify-between items-center mb-3">
           <span className="font-bold text-slate-700 dark:text-slate-200 tracking-wide text-sm">

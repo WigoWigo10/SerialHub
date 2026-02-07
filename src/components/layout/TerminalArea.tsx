@@ -34,7 +34,14 @@ export function TerminalArea() {
   const zoomTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { 
-    localEcho, viewMode, showTimestamp, activePort, connected, theme 
+    localEcho,
+    viewMode,
+    showTimestamp,
+    activePort, 
+    connected,
+    theme,
+    isSidebarOpen,
+    setSidebarOpen,
   } = useSettingsStore();
 
   const handleClear = () => {
@@ -54,6 +61,40 @@ export function TerminalArea() {
   const [tempMessage, setTempMessage] = useState<string | null>(null);
   //const tempTimeoutRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (xtermRef.current) {
+      const isDark = theme === 'dark';
+      
+      // Define as cores baseadas no tema atual
+      xtermRef.current.options.theme = {
+        background: isDark ? '#1e1e1e' : '#ffffff',
+        foreground: isDark ? '#f8f8f2' : '#1e293b', // Slate-800 para modo claro
+        cursor: isDark ? '#f8f8f2' : '#000000',
+        cursorAccent: isDark ? '#000000' : '#ffffff',
+        selectionBackground: isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)', // Azul suave
+        black: isDark ? '#000000' : '#000000',
+        red: isDark ? '#ff5555' : '#ef4444',
+        green: isDark ? '#50fa7b' : '#10b981',
+        yellow: isDark ? '#f1fa8c' : '#f59e0b',
+        blue: isDark ? '#bd93f9' : '#3b82f6',
+        magenta: isDark ? '#ff79c6' : '#d946ef',
+        cyan: isDark ? '#8be9fd' : '#06b6d4',
+        white: isDark ? '#bfbfbf' : '#bfbfbf',
+        brightBlack: isDark ? '#4d4d4d' : '#4d4d4d',
+        brightRed: isDark ? '#ff6e6e' : '#f87171',
+        brightGreen: isDark ? '#69ff94' : '#4ade80',
+        brightYellow: isDark ? '#ffffa5' : '#fcd34d',
+        brightBlue: isDark ? '#d6acff' : '#60a5fa',
+        brightMagenta: isDark ? '#ff92df' : '#e879f9',
+        brightCyan: isDark ? '#a4ffff' : '#22d3ee',
+        brightWhite: isDark ? '#e6e6e6' : '#e6e6e6',
+      };
+      
+      // Força o XTerm a redesenhar a tela imediatamente
+      xtermRef.current.refresh(0, xtermRef.current.rows - 1);
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (!xtermRef.current) return;
@@ -98,12 +139,14 @@ export function TerminalArea() {
     };
   }, [connected]);
 
-  //const triggerTempStatus = (msg: string, duration = 2000) => {
-    //setTempMessage(msg);
-    //if (tempTimeoutRef.current) clearTimeout(tempTimeoutRef.current);
-    // @ts-ignore
-    //tempTimeoutRef.current = setTimeout(() => setTempMessage(null), duration);
-  //};
+  const handleRedirectFocus = () => {
+    // Só redireciona se o usuário NÃO estiver selecionando texto
+    if (xtermRef.current?.hasSelection()) {
+      return;
+    }
+    // Dispara o evento que a CommandBar está ouvindo
+    window.dispatchEvent(new Event('terminal:focus-input'));
+  };
 
   useEffect(() => { showTimestampRef.current = showTimestamp; }, [showTimestamp]);
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
@@ -194,6 +237,14 @@ export function TerminalArea() {
     setTimeout(() => {
       fitAddon.fit();
     }, 100);
+
+    term.onKey((e) => {
+      // Ignora teclas de controle (como Ctrl+C para copiar)
+      const ev = e.domEvent;
+      if (!ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+        handleRedirectFocus();
+      }
+    });
     
     const resizeObserver = new ResizeObserver(() => {
       if (fitAddonRef.current) {
@@ -292,29 +343,50 @@ export function TerminalArea() {
         </div>
 
         <div className="flex items-center gap-3">
-             <div className={`flex items-center gap-1 text-xs font-bold transition-all duration-300 ${copyFeedback ? 'opacity-100 translate-y-0 text-emerald-500' : 'opacity-0 translate-y-2'}`}>
-                <Check size={12} />
-                <span>{t('copied')}</span>
-             </div>
+          <div className={`flex items-center gap-1 text-xs font-bold transition-all duration-300 ${copyFeedback ? 'opacity-100 translate-y-0 text-emerald-500' : 'opacity-0 translate-y-2'}`}>
+            <Check size={12} />
+            <span>{t('copied')}</span>
+          </div>
 
-             <div className={`flex items-center gap-2 px-2 py-0.5 rounded-full border border-transparent transition-all duration-300 ${currentStatus.animate ? "bg-emerald-500/10 border-emerald-500/20" : ""}`}>
-                <span className={`text-[10px] font-bold tracking-wide uppercase transition-colors duration-300 ${currentStatus.color}`}>
-                    {currentStatus.text}
-                </span>
-                <div className={`${currentStatus.color}`}>
-                    <currentStatus.icon size={14} className={currentStatus.animate ? "animate-pulse" : ""} />
-                </div>
+          <div 
+            onClick={() => !isSidebarOpen && setSidebarOpen(true)}
+            className={`
+              flex items-center gap-2 px-2 py-0.5 rounded-full border border-transparent transition-all duration-300
+              ${currentStatus.animate ? "bg-emerald-500/10 border-emerald-500/20" : ""}
+              ${!isSidebarOpen ? "cursor-pointer hover:bg-white/10 hover:scale-105 active:scale-95 select-none" : ""}
+            `}
+          >
+            <span className={`text-[10px] font-bold tracking-wide uppercase transition-colors duration-300 ${currentStatus.color}`}>
+              {currentStatus.text}
+            </span>
+            
+            <div className={`${currentStatus.color}`}>
+              <currentStatus.icon size={14} className={currentStatus.animate ? "animate-pulse" : ""} />
             </div>
+
+            {/* Opcional: Uma bolinha piscando para indicar que tem uma ação pendente quando fechado */}
+            {!isSidebarOpen && (
+               <span className="flex h-1.5 w-1.5 relative ml-1">
+                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
+               </span>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 relative p-1 pl-3 cursor-text" onClick={() => xtermRef.current?.focus()}>
-         <div ref={terminalRef} className="absolute inset-2 w-[calc(100%-16px)] h-[calc(100%-16px)] z-0" />
+      <div
+        className="flex-1 relative p-1 pl-3 cursor-text" 
+        onClick={handleRedirectFocus}
+      >
+        <div
+          ref={terminalRef}
+          className="absolute inset-2 w-[calc(100%-16px)] h-[calc(100%-16px)] z-0" />
          
-         <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/90 dark:bg-slate-800/90 text-slate-800 dark:text-white px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xl backdrop-blur flex items-center gap-2 pointer-events-none transition-all duration-300 z-50 ${zoomFeedback.visible ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`}>
-            <ZoomIn size={18} className="text-blue-500" />
-            <span className="text-sm font-bold font-mono">{zoomFeedback.size}px</span>
-         </div>
+        <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/90 dark:bg-slate-800/90 text-slate-800 dark:text-white px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xl backdrop-blur flex items-center gap-2 pointer-events-none transition-all duration-300 z-50 ${zoomFeedback.visible ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`}>
+          <ZoomIn size={18} className="text-blue-500" />
+          <span className="text-sm font-bold font-mono">{zoomFeedback.size}px</span>
+        </div>
       </div>
       
       <div className={`absolute bottom-6 right-8 transition-all duration-300 transform z-50 ${showScrollBtn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>

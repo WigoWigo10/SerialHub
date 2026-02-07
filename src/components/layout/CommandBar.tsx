@@ -11,6 +11,7 @@ import {
 import { useSettingsStore } from "../../stores/settingsStore";
 import { LedIndicator } from "../ui/LedIndicator";
 import { useLanguage } from "../../hooks/useLanguage";
+import toast from "react-hot-toast";
 
 export function CommandBar() {
   const [text, setText] = useState("");
@@ -31,6 +32,58 @@ export function CommandBar() {
 
   const rxTimeout = useRef<number>();
   const txTimeout = useRef<number>();
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedData = e.clipboardData.getData("text");
+    const trimmed = pastedData.trim();
+
+    // Verificação rápida: Só tenta parsear se parecer um objeto ou array JSON
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        // Tenta converter para Objeto e depois volta para String (isso remove indentação)
+        const jsonObject = JSON.parse(trimmed);
+        const minified = JSON.stringify(jsonObject);
+
+        // Se o minificado for diferente do original (ou seja, o original tinha quebras/espaços)
+        if (minified !== trimmed) {
+          e.preventDefault(); // Cancela a colagem padrão (que viria com quebras de linha)
+
+          // Lógica para inserir o texto minificado na posição do cursor
+          const input = e.currentTarget;
+          const start = input.selectionStart || 0;
+          const end = input.selectionEnd || 0;
+          const currentVal = text; // Usando o estado 'text'
+
+          const newVal = currentVal.substring(0, start) + minified + currentVal.substring(end);
+          
+          setText(newVal);
+          
+          // Feedback visual para o usuário entender o que aconteceu
+          toast.success(t('json_minified'));
+
+          setTimeout(() => {
+            if(inputRef.current) {
+               inputRef.current.selectionStart = inputRef.current.selectionEnd = start + minified.length;
+            }
+          }, 0);
+        }
+      } catch (err) {
+        // Se der erro no JSON.parse, não faz nada e deixa colar o texto original
+        console.log("Não é um JSON válido ou incompleto");
+      }
+    }
+  };
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleFocusRequest = () => {
+      inputRef.current?.focus();
+    };
+
+    window.addEventListener('terminal:focus-input', handleFocusRequest);
+    return () => window.removeEventListener('terminal:focus-input', handleFocusRequest);
+  }, []);
 
   useEffect(() => {
     const unlistenRx = listen("serial-data", () => {
@@ -72,8 +125,8 @@ export function CommandBar() {
     if (!text) return;
 
     setHistory((prev) => {
-      if (prev.length > 0 && prev[prev.length - 1] === text) return prev;
-      return [...prev, text];
+      const historyWithoutDuplicate = prev.filter((item) => item !== text);
+      return [...historyWithoutDuplicate.slice(-49), text];
     });
     setHistoryIndex(-1);
     setDraft("");
@@ -83,6 +136,7 @@ export function CommandBar() {
       if (lineEnding === "LF") payload += "\n";
       if (lineEnding === "CRLF") payload += "\r\n";
     }
+    
     try {
       await invoke("write_serial", { content: payload });
       setText("");
@@ -179,12 +233,14 @@ export function CommandBar() {
       <div className="flex-1 relative flex items-center gap-2">
         <div className="flex-1 relative">
           <input
+            ref={inputRef}
             type="text"
             value={text}
             onChange={(e) => {
               setText(e.target.value);
             }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               mode === "ASCII"
                 ? t("input_placeholder_ascii")
@@ -262,7 +318,7 @@ export function CommandBar() {
 
         <div className="w-px h-6 bg-slate-300 dark:bg-slate-800 mx-1"></div>
 
-        <LedIndicator active={txActive} color="red" label="TX" />
+        <LedIndicator active={txActive} color="purple" label="TX" />
         <LedIndicator active={rxActive} color="green" label="RX" />
       </div>
     </div>

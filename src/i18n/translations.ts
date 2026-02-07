@@ -23,16 +23,17 @@ export const translations = {
     manufacturer: 'Fabricante',
     serial_device: 'Dispositivo Serial',
     serial_native: 'Porta Serial Nativa/Virtual',
+    expand_menu: "Expandir Menu",
 
-    // --- TERMINAL AREA (Corrigido) ---
+    // --- TERMINAL AREA ---
     terminal_header: 'TERMINAL',
     copied: 'COPIADO',
     disconnected: 'Desconectado',
     receiving: 'Recebendo Dados...',
-    connected_status: 'CONECTADO', // Usado na Sidebar e no Terminal
+    connected_status: 'CONECTADO',
     clean_terminal: 'Terminal Limpo',
 
-    // --- COMMAND BAR (Corrigido) ---
+    // --- COMMAND BAR ---
     clean_tooltip: 'Limpar Terminal',
     echo_tooltip_on: 'Eco Local: LIGADO (Você vê o que digita)',
     echo_tooltip_off: 'Eco Local: DESLIGADO',
@@ -138,6 +139,146 @@ export const translations = {
     dash_tx_data: 'Dados Enviados (TX)',
     dash_rx_data: 'Dados Recebidos (RX)',
     dash_subtitle: 'Telemetria avançada de sistema e conexão.',
+
+// --- MQTT PAGE ---
+    mqtt_profile: 'Perfil',
+    mqtt_saved_profiles: 'Perfis Salvos',
+    mqtt_new_profile: 'Novo',
+    mqtt_broker_port: 'Broker & Porta',
+    mqtt_client_id: 'Client ID',
+    mqtt_user: 'User',
+    mqtt_pass: 'Pass',
+    mqtt_user_placeholder: 'Usuário',
+    mqtt_pass_placeholder: 'Senha',
+    mqtt_connect: 'Conectar',
+    mqtt_disconnect: 'Desconectar',
+    mqtt_connecting: '...',
+    
+    // Tooltips Header
+    mqtt_ws_active: 'Modo WebSocket (WS/WSS) Ativado',
+    mqtt_tcp_active: 'Modo TCP Padrão. Clique para ativar WebSockets.',
+    mqtt_tls_configured: 'Segurança Configurada',
+    mqtt_tls_configure: 'Configurar TLS',
+    mqtt_lwt_active: 'LWT Ativo: ',
+    mqtt_lwt_configure: 'Configurar Last Will (Testamento)',
+
+    // Painel Esquerdo (Publish/Subscribe)
+    mqtt_publish_title: 'PUBLICAR',
+    mqtt_topic_label: 'Tópico',
+    mqtt_payload_label: 'Payload (Mensagem)',
+    mqtt_qos_label: 'QoS',
+    mqtt_retain_label: 'Retain (Manter)',
+    mqtt_send_btn: 'Enviar',
+    
+    mqtt_subscribe_title: 'INSCREVER',
+    mqtt_sub_placeholder: 'Novo Tópico de Inscrição',
+    mqtt_add_btn: 'Adicionar',
+    mqtt_active_topics: 'Tópicos Ativos',
+    mqtt_no_subs: 'Nenhuma inscrição ativa.',
+    
+    // Modals
+    mqtt_modal_save_title: 'Salvar Perfil',
+    mqtt_modal_save_name: 'Nome do Perfil',
+    mqtt_modal_save_help: 'Salvará: Broker, Porta e Credenciais',
+    mqtt_btn_cancel: 'Cancelar',
+    mqtt_btn_save: 'Salvar',
+    
+    mqtt_modal_tls_title: 'Segurança (TLS/SSL)',
+    mqtt_modal_tls_desc: 'Habilita conexão segura (MQTTS/WSS) e autenticação mútua.',
+    mqtt_file_ca: 'CA Certificate',
+    mqtt_file_cert: 'Client Certificate',
+    mqtt_file_key: 'Client Key',
+    mqtt_select_file: 'Selecionar Arquivo',
+    
+    mqtt_modal_lwt_title: 'Last Will (LWT)',
+    mqtt_modal_lwt_desc: 'Mensagem enviada automaticamente pelo Broker caso este cliente desconecte inesperadamente.',
+    mqtt_lwt_topic: 'Tópico de Morte',
+    mqtt_lwt_payload: 'Payload (Mensagem)',
+    mqtt_btn_clean: 'Limpar',
+    
+    // Toasts / Erros
+    mqtt_toast_connected: 'Conectado ao Broker!',
+    mqtt_toast_disconnected: 'Desconectado.',
+    mqtt_toast_saved: 'Perfil Salvo!',
+    mqtt_toast_invalid_name: 'Nome inválido',
+    mqtt_toast_fix_errors: 'Corrija os erros de arquivo antes de salvar.',
+    mqtt_toast_file_missing: 'Arquivo não encontrado!',
+    mqtt_toast_file_missing_desc: 'O arquivo foi movido ou deletado.',
+
+    mqtt_toast_lwt_hint: "Dica: Tópicos costumam usar '/' (ex: status/morte)",
+    mqtt_toast_file_ok: "selecionado",
+    mqtt_toast_file_err: "Falha ao abrir seletor de arquivos",
+    mqtt_toast_broker_empty: "Preencha o endereço do Broker primeiro.",
+    mqtt_def_profile_name: "Meu Broker",
+
+    mqtt_toast_loaded: "Carregado",
+    mqtt_toast_cert_mismatch: "Par Incompleto: Certificado e Chave devem ser usados juntos.",
+    mqtt_err_timeout: "Tempo limite esgotado.",
+    mqtt_err_refused: "Conexão recusada.",
+
+    // Mensagens de Ação MQTT
+    mqtt_msg_disconnecting: "Desconectando...",
+    mqtt_msg_connecting: "Conectando a",
+    mqtt_msg_subscribed: "Inscrito: ",
+    mqtt_msg_unsubscribed: "Removido: ",
+    mqtt_msg_published: "Enviado",
+    mqtt_msg_chart_added: "Gráfico: ",
+    mqtt_msg_chart_stopped: "Parado: ",
+    
+    // Avisos e Erros
+    mqtt_warn_already_sub: "Já inscrito",
+    mqtt_warn_already_chart: "Já no gráfico",
+    mqtt_warn_max_charts: "Máximo de 3 gráficos",
+    
+    mqtt_err_generic: "Erro: ",
+    mqtt_err_failed: "Falha: ",
+    mqtt_err_sub: "Erro ao assinar",
+    mqtt_err_unsub: "Erro ao remover",
+    mqtt_err_pub: "Erro ao publicar",
+
+    mqtt_profile_active: "Perfil Ativo:",
+    mqtt_btn_exit_profile: "SAIR",
+    mqtt_tooltip_exit_profile: "Sair deste perfil",
+
+    mqtt_sub_header: "Assinaturas",
+    mqtt_ph_topic_hash: "tópico/#",
+    mqtt_tooltip_sub: "Inscrever",
+    mqtt_ph_topic: "Tópico",
+    mqtt_ph_payload: "Payload",
+    mqtt_explorer_title: "Explorer",
+    mqtt_tooltip_view_txt: "Visualizar como Texto (JSON/ASCII)",
+    mqtt_tooltip_view_hex: "Visualizar como Hexadecimal (Binário)",
+    mqtt_tooltip_clear_history: "Limpar Histórico",
+  
+    mqtt_sec_clean: "Limpar Tudo",
+    mqtt_sec_clean_toast: "Configuração TLS limpa",
+    mqtt_sec_auto_check: "Verificando caminhos automaticamente. Apenas arquivos válidos permitidos.",
+    mqtt_sec_confirm: "Confirmar",
+    
+    // Labels dos Inputs (Caso ainda não estejam)
+    mqtt_sec_lbl_ca: "CA Certificate (.crt)",
+    mqtt_sec_lbl_cert: "Client Certificate (.crt)",
+    mqtt_sec_lbl_key: "Client Private Key (.key)",
+
+    mqtt_save_ph: "Ex: Broker Local",
+    mqtt_save_will_save: "Salvará:",
+    mqtt_save_creds: "(e credenciais)",
+
+    mqtt_ph_lwt_topic: "status/serialhub/offline",
+    mqtt_ph_lwt_payload: "Desconectado",
+    mqtt_btn_save_lwt: "Salvar LWT",
+    mqtt_lbl_retain_caps: "RETAIN",
+
+    mqtt_tt_hex_val: "Valor Hexadecimal",
+    mqtt_tt_hide_chart: "Ocultar Gráfico",
+    mqtt_tt_show_chart: "Iniciar Gráfico",
+    mqtt_tt_copy: "Copiar",
+    mqtt_waiting_data: "Aguardando dados...",
+    mqtt_toast_copied: "Copiado: ",
+    mqtt_toast_copied_short: "Copiado!",
+    mqtt_toast_val_copied: "Valor copiado",
+
+    json_minified: "JSON detectado e minificado automaticamente!",
   },
 
   'en-US': {
@@ -164,6 +305,7 @@ export const translations = {
     manufacturer: 'Manufacturer',
     serial_device: 'Serial Device',
     serial_native: 'Native/Virtual Serial Port',
+    expand_menu: "Expand Menu",
 
     // --- TERMINAL AREA ---
     terminal_header: 'TERMINAL',
@@ -279,6 +421,139 @@ export const translations = {
     dash_tx_data: 'Sent Data (TX)',
     dash_rx_data: 'Received Data (RX)',
     dash_subtitle: 'Advanced system and connection telemetry.',
+
+    // --- MQTT PAGE ---
+    mqtt_profile: 'Profile',
+    mqtt_saved_profiles: 'Saved Profiles',
+    mqtt_new_profile: 'New',
+    mqtt_broker_port: 'Broker & Port',
+    mqtt_client_id: 'Client ID',
+    mqtt_user: 'User',
+    mqtt_pass: 'Pass',
+    mqtt_user_placeholder: 'Username',
+    mqtt_pass_placeholder: 'Password',
+    mqtt_connect: 'Connect',
+    mqtt_disconnect: 'Disconnect',
+    mqtt_connecting: '...',
+    
+    mqtt_ws_active: 'WebSocket Mode (WS/WSS) Active',
+    mqtt_tcp_active: 'Standard TCP Mode. Click to enable WebSockets.',
+    mqtt_tls_configured: 'Security Configured',
+    mqtt_tls_configure: 'Configure TLS',
+    mqtt_lwt_active: 'LWT Active: ',
+    mqtt_lwt_configure: 'Configure Last Will',
+
+    mqtt_publish_title: 'PUBLISH',
+    mqtt_topic_label: 'Topic',
+    mqtt_payload_label: 'Payload (Message)',
+    mqtt_qos_label: 'QoS',
+    mqtt_retain_label: 'Retain',
+    mqtt_send_btn: 'Send',
+    
+    mqtt_subscribe_title: 'SUBSCRIBE',
+    mqtt_sub_placeholder: 'New Subscription Topic',
+    mqtt_add_btn: 'Add',
+    mqtt_active_topics: 'Active Topics',
+    mqtt_no_subs: 'No active subscriptions.',
+    
+    mqtt_modal_save_title: 'Save Profile',
+    mqtt_modal_save_name: 'Profile Name',
+    mqtt_modal_save_help: 'Will save: Broker, Port and Credentials',
+    mqtt_btn_cancel: 'Cancel',
+    mqtt_btn_save: 'Save',
+    
+    mqtt_modal_tls_title: 'Security (TLS/SSL)',
+    mqtt_modal_tls_desc: 'Enables secure connection (MQTTS/WSS) and mutual authentication.',
+    mqtt_file_ca: 'CA Certificate',
+    mqtt_file_cert: 'Client Certificate',
+    mqtt_file_key: 'Client Key',
+    mqtt_select_file: 'Select File',
+    
+    mqtt_modal_lwt_title: 'Last Will (LWT)',
+    mqtt_modal_lwt_desc: 'Message sent automatically by the Broker if this client disconnects unexpectedly.',
+    mqtt_lwt_topic: 'Will Topic',
+    mqtt_lwt_payload: 'Payload (Message)',
+    mqtt_btn_clean: 'Clear',
+    
+    mqtt_toast_connected: 'Connected to Broker!',
+    mqtt_toast_disconnected: 'Disconnected.',
+    mqtt_toast_saved: 'Profile Saved!',
+    mqtt_toast_invalid_name: 'Invalid name',
+    mqtt_toast_fix_errors: 'Fix file errors before saving.',
+    mqtt_toast_file_missing: 'File not found!',
+    mqtt_toast_file_missing_desc: 'The file was moved or deleted.',
+
+    mqtt_toast_lwt_hint: "Hint: Topics usually use '/' (e.g. status/will)",
+    mqtt_toast_file_ok: "selected",
+    mqtt_toast_file_err: "Failed to open file selector",
+    mqtt_toast_broker_empty: "Fill in Broker Address first.",
+    mqtt_def_profile_name: "My Broker",
+
+    mqtt_toast_loaded: "Loaded",
+    mqtt_toast_cert_mismatch: "Mismatch: Certificate and Key must be used together.",
+    mqtt_err_timeout: "Connection timed out.",
+    mqtt_err_refused: "Connection refused.",
+
+    mqtt_msg_disconnecting: "Disconnecting...",
+    mqtt_msg_connecting: "Connecting to",
+    mqtt_msg_subscribed: "Subscribed: ",
+    mqtt_msg_unsubscribed: "Removed: ",
+    mqtt_msg_published: "Sent",
+    mqtt_msg_chart_added: "Chart: ",
+    mqtt_msg_chart_stopped: "Stopped: ",
+    
+    mqtt_warn_already_sub: "Already subscribed",
+    mqtt_warn_already_chart: "Already on chart",
+    mqtt_warn_max_charts: "Max 3 charts",
+    
+    mqtt_err_generic: "Error: ",
+    mqtt_err_failed: "Failed: ",
+    mqtt_err_sub: "Subscription failed",
+    mqtt_err_unsub: "Unsubscribe failed",
+    mqtt_err_pub: "Publish failed",
+
+    mqtt_profile_active: "Active Profile:",
+    mqtt_btn_exit_profile: "EXIT",
+    mqtt_tooltip_exit_profile: "Exit this profile",
+
+    mqtt_sub_header: "Subscriptions",
+    mqtt_ph_topic_hash: "topic/#",
+    mqtt_tooltip_sub: "Subscribe",
+    mqtt_ph_topic: "Topic",
+    mqtt_ph_payload: "Payload",
+    mqtt_explorer_title: "Explorer",
+    mqtt_tooltip_view_txt: "View as Text (JSON/ASCII)",
+    mqtt_tooltip_view_hex: "View as Hex (Binary)",
+    mqtt_tooltip_clear_history: "Clear History",
+
+    mqtt_sec_clean: "Clear All",
+    mqtt_sec_clean_toast: "TLS config cleared",
+    mqtt_sec_auto_check: "Checking paths automatically. Only valid files allowed.",
+    mqtt_sec_confirm: "Confirm",
+    
+    mqtt_sec_lbl_ca: "CA Certificate (.crt)",
+    mqtt_sec_lbl_cert: "Client Certificate (.crt)",
+    mqtt_sec_lbl_key: "Client Private Key (.key)",
+
+    mqtt_save_ph: "Ex: Local Broker",
+    mqtt_save_will_save: "Will save:",
+    mqtt_save_creds: "(and credentials)",
+
+    mqtt_ph_lwt_topic: "status/serialhub/offline",
+    mqtt_ph_lwt_payload: "Disconnected",
+    mqtt_btn_save_lwt: "Save LWT",
+    mqtt_lbl_retain_caps: "RETAIN",
+
+    mqtt_tt_hex_val: "Hex Value",
+    mqtt_tt_hide_chart: "Hide Chart",
+    mqtt_tt_show_chart: "Start Chart",
+    mqtt_tt_copy: "Copy",
+    mqtt_waiting_data: "Waiting for data...",
+    mqtt_toast_copied: "Copied: ",
+    mqtt_toast_copied_short: "Copied!",
+    mqtt_toast_val_copied: "Value copied",
+
+    json_minified: "JSON detected and automatically minified!",
   },
 
   'es': {
@@ -305,6 +580,7 @@ export const translations = {
     manufacturer: 'Fabricante',
     serial_device: 'Dispositivo Serie',
     serial_native: 'Puerto Serie Nativo/Virtual',
+    expand_menu: "Expandir Menú",
 
     // --- TERMINAL AREA ---
     terminal_header: 'TERMINAL',
@@ -414,6 +690,139 @@ export const translations = {
     dash_tx_data: 'Datos Enviados (TX)',
     dash_rx_data: 'Datos Recibidos (RX)',
     dash_subtitle: 'Telemetría avanzada de sistema y conexión.',
+
+    // --- MQTT PAGE ---
+    mqtt_profile: 'Perfil',
+    mqtt_saved_profiles: 'Perfiles Guardados',
+    mqtt_new_profile: 'Nuevo',
+    mqtt_broker_port: 'Broker y Puerto',
+    mqtt_client_id: 'Client ID',
+    mqtt_user: 'Usuario',
+    mqtt_pass: 'Clave',
+    mqtt_user_placeholder: 'Usuario',
+    mqtt_pass_placeholder: 'Contraseña',
+    mqtt_connect: 'Conectar',
+    mqtt_disconnect: 'Desconectar',
+    mqtt_connecting: '...',
+    
+    mqtt_ws_active: 'Modo WebSocket (WS/WSS) Activo',
+    mqtt_tcp_active: 'Modo TCP Estándar. Clic para activar WebSockets.',
+    mqtt_tls_configured: 'Seguridad Configurada',
+    mqtt_tls_configure: 'Configurar TLS',
+    mqtt_lwt_active: 'LWT Activo: ',
+    mqtt_lwt_configure: 'Configurar Última Voluntad',
+
+    mqtt_publish_title: 'PUBLICAR',
+    mqtt_topic_label: 'Tema (Topic)',
+    mqtt_payload_label: 'Carga (Mensaje)',
+    mqtt_qos_label: 'QoS',
+    mqtt_retain_label: 'Retener',
+    mqtt_send_btn: 'Enviar',
+    
+    mqtt_subscribe_title: 'SUSCRIBIR',
+    mqtt_sub_placeholder: 'Nuevo Tema de Suscripción',
+    mqtt_add_btn: 'Añadir',
+    mqtt_active_topics: 'Temas Activos',
+    mqtt_no_subs: 'Sin suscripciones activas.',
+    
+    mqtt_modal_save_title: 'Guardar Perfil',
+    mqtt_modal_save_name: 'Nombre del Perfil',
+    mqtt_modal_save_help: 'Guardará: Broker, Puerto y Credenciales',
+    mqtt_btn_cancel: 'Cancelar',
+    mqtt_btn_save: 'Guardar',
+    
+    mqtt_modal_tls_title: 'Seguridad (TLS/SSL)',
+    mqtt_modal_tls_desc: 'Habilita conexión segura (MQTTS/WSS) y autenticación mutua.',
+    mqtt_file_ca: 'Certificado CA',
+    mqtt_file_cert: 'Certificado Cliente',
+    mqtt_file_key: 'Llave Cliente',
+    mqtt_select_file: 'Seleccionar Archivo',
+    
+    mqtt_modal_lwt_title: 'Última Voluntad (LWT)',
+    mqtt_modal_lwt_desc: 'Mensaje enviado automáticamente por el Broker si el cliente desconecta inesperadamente.',
+    mqtt_lwt_topic: 'Tema de Voluntad',
+    mqtt_lwt_payload: 'Carga (Mensaje)',
+    mqtt_btn_clean: 'Limpiar',
+    
+    mqtt_toast_connected: '¡Conectado al Broker!',
+    mqtt_toast_disconnected: 'Desconectado.',
+    mqtt_toast_saved: '¡Perfil Guardado!',
+    mqtt_toast_invalid_name: 'Nombre inválido',
+    mqtt_toast_fix_errors: 'Corrija los errores de archivo antes de guardar.',
+    mqtt_toast_file_missing: '¡Archivo no encontrado!',
+    mqtt_toast_file_missing_desc: 'El archivo fue movido o eliminado.',
+
+    mqtt_toast_lwt_hint: "Consejo: Temas suelen usar '/' (ej: status/will)",
+    mqtt_toast_file_ok: "seleccionado",
+    mqtt_toast_file_err: "Error al abrir selector de archivos",
+    mqtt_toast_broker_empty: "Complete la dirección del Broker primero.",
+    mqtt_def_profile_name: "Mi Broker",
+
+    mqtt_toast_loaded: "Cargado",
+    mqtt_toast_cert_mismatch: "Par Incompleto: Certificado y Llave deben usarse juntos.",
+    mqtt_err_timeout: "Tiempo de espera agotado.",
+    mqtt_err_refused: "Conexión rechazada.",
+
+    mqtt_msg_disconnecting: "Desconectando...",
+    mqtt_msg_connecting: "Conectando a",
+    mqtt_msg_subscribed: "Suscrito: ",
+    mqtt_msg_unsubscribed: "Eliminado: ",
+    mqtt_msg_published: "Enviado",
+    mqtt_msg_chart_added: "Gráfico: ",
+    mqtt_msg_chart_stopped: "Detenido: ",
+    
+    mqtt_warn_already_sub: "Ya suscrito",
+    mqtt_warn_already_chart: "Ya en el gráfico",
+    mqtt_warn_max_charts: "Máximo 3 gráficos",
+    
+    mqtt_err_generic: "Error: ",
+    mqtt_err_failed: "Fallo: ",
+    mqtt_err_sub: "Error al suscribir",
+    mqtt_err_unsub: "Error al eliminar",
+    mqtt_err_pub: "Error al publicar",
+
+    mqtt_profile_active: "Perfil Activo:",
+    mqtt_btn_exit_profile: "SALIR",
+    mqtt_tooltip_exit_profile: "Salir de este perfil",
+
+    mqtt_sub_header: "Suscripciones",
+    mqtt_ph_topic_hash: "tema/#",
+    mqtt_tooltip_sub: "Suscribirse",
+    mqtt_ph_topic: "Tema",
+    mqtt_ph_payload: "Carga",
+    mqtt_explorer_title: "Explorador",
+    mqtt_tooltip_view_txt: "Ver como Texto (JSON/ASCII)",
+    mqtt_tooltip_view_hex: "Ver como Hexadecimal (Binario)",
+    mqtt_tooltip_clear_history: "Borrar Historial",
+
+    mqtt_sec_clean: "Limpiar Todo",
+    mqtt_sec_clean_toast: "Configuración TLS limpia",
+    mqtt_sec_auto_check: "Verificando rutas automáticamente. Solo archivos válidos permitidos.",
+    mqtt_sec_confirm: "Confirmar",
+    
+    mqtt_sec_lbl_ca: "Certificado CA (.crt)",
+    mqtt_sec_lbl_cert: "Certificado Cliente (.crt)",
+    mqtt_sec_lbl_key: "Llave Privada Cliente (.key)",
+
+    mqtt_save_ph: "Ej: Broker Local",
+    mqtt_save_will_save: "Guardará:",
+    mqtt_save_creds: "(y credenciales)",
+
+    mqtt_ph_lwt_topic: "status/serialhub/offline",
+    mqtt_ph_lwt_payload: "Desconectado",
+    mqtt_btn_save_lwt: "Guardar LWT",
+    mqtt_lbl_retain_caps: "RETENER",
+
+    mqtt_tt_hex_val: "Valor Hexadecimal",
+    mqtt_tt_hide_chart: "Ocultar Gráfico",
+    mqtt_tt_show_chart: "Iniciar Gráfico",
+    mqtt_tt_copy: "Copiar",
+    mqtt_waiting_data: "Esperando datos...",
+    mqtt_toast_copied: "Copiado: ",
+    mqtt_toast_copied_short: "¡Copiado!",
+    mqtt_toast_val_copied: "Valor copiado",
+
+    json_minified: "¡JSON detectado y minificado automáticamente!",
   }
 };
 

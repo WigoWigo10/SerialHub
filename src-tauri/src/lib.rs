@@ -60,14 +60,17 @@ pub struct SerialState {
 
 mod commands {
     pub mod serial_cmd;
+    pub mod mqtt_cmd;
 }
+use commands::mqtt_cmd;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_bluetooth::init())
+        // .plugin(tauri_plugin_bluetooth::init()) // Desativado temporariamente
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(SerialState {
             port: Arc::new(Mutex::new(None)),
             running: Arc::new(AtomicBool::new(false)),
@@ -75,6 +78,8 @@ pub fn run() {
             tx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             rx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
+        .manage(mqtt_cmd::MqttState::default()) // <--- INICIALIZA O ESTADO MQTT
+
         .setup(|app| {
             #[cfg(debug_assertions)]
             { if let Some(w) = app.get_webview_window("main") { w.open_devtools(); } }
@@ -119,7 +124,7 @@ pub fn run() {
                                 for adapter in res {
                                     if let Some(status) = adapter.net_connection_status {
                                         if status == 2 { // 2 = Connected
-                                            net_adapter_name = adapter.name;
+                                            net_adapter_name = adapter.name.clone();
                                             break;
                                         }
                                     }
@@ -141,10 +146,10 @@ pub fn run() {
                 );
 
                 loop {
-                    sys.refresh_cpu();
+                    sys.refresh_cpu_all();
                     sys.refresh_memory();
 
-                    // CPU
+                    // CPU Stats
                     let cpus = sys.cpus();
                     let mut avg_freq = 0;
                     if !cpus.is_empty() {
@@ -154,7 +159,7 @@ pub fn run() {
                     let cpu_brand = if !cpus.is_empty() { cpus[0].brand().to_string() } else { "".to_string() };
                     let cpu_vendor = if !cpus.is_empty() { cpus[0].vendor_id().to_string() } else { "".to_string() };
 
-                    // BATERIA
+                    // BATERIA (Windows Only)
                     let mut bat_percent = 0;
                     let mut is_charging = false;
                     let mut has_battery = false;
@@ -177,7 +182,7 @@ pub fn run() {
                     }
 
                     let payload = serde_json::json!({
-                        "cpu_load": sys.global_cpu_info().cpu_usage(),
+                        "cpu_load": sys.global_cpu_usage(),
                         "mem_used": sys.used_memory(),
                         "mem_total": sys.total_memory(),
                         "cpu_freq": avg_freq,
@@ -221,13 +226,22 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Serial Port Commands
             commands::serial_cmd::list_ports,
             commands::serial_cmd::open_port,
             commands::serial_cmd::close_port,
             commands::serial_cmd::write_serial,
             commands::serial_cmd::set_control_pin,
             commands::serial_cmd::start_recording,
-            commands::serial_cmd::stop_recording
+            commands::serial_cmd::stop_recording,
+
+            // MQTT Commands
+            mqtt_cmd::connect_mqtt,
+            mqtt_cmd::disconnect_mqtt,
+            mqtt_cmd::publish_mqtt,
+            mqtt_cmd::subscribe_mqtt,
+            mqtt_cmd::unsubscribe_mqtt,
+            mqtt_cmd::check_file_exists
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -205,7 +205,11 @@ pub fn write_serial(
                         let _ = file.flush();
                     }
                 }
+
                 let _ = app.emit("serial-tx", size);
+                
+                let _ = app.emit("serial-sent", bytes.to_vec());
+
                 Ok(size)
             }
             Err(e) => Err(format!("Erro escrita: {}", e)),

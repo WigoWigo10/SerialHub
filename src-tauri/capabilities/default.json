@@ -8,8 +8,6 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "bluetooth:default",
-    "bluetooth:allow-request-device",
     "shell:default"
   ]
 }

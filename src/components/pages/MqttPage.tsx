@@ -598,10 +598,6 @@ export function MqttPage() {
     toast.success(`${t('mqtt_msg_chart_added')}${topic}`, { icon: "📈" });
   };
 
-  const handleRemoveChart = (topic: string) => {
-    setChartTopics((prev) => prev.filter((t) => t !== topic));
-  };
-
   const handleStopChart = (topic: string) => {
     setChartTopics((prev) => prev.filter((t) => t !== topic));
     setChartHistory((prev) => {
@@ -1014,7 +1010,6 @@ export function MqttPage() {
                 value={caPath} isValid={caValid} placeholder="C:\certs\ca.crt" 
                 onChange={(e: any) => { setCaPath(e.target.value); handleInputChange(() => {}, null); }}
                 onBrowse={() => handleFileSelect(setCaPath, 'CA Cert', ['crt', 'pem', 'ca'])}
-                t={t} // Passar função t para o componente filho
               />
                 
                 <div className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50/50 dark:bg-slate-800/20 flex flex-col gap-3">
@@ -1023,14 +1018,12 @@ export function MqttPage() {
                     value={certPath} isValid={certValid} placeholder="C:\certs\client.crt"
                     onChange={(e: any) => { setCertPath(e.target.value); handleInputChange(() => {}, null); }}
                     onBrowse={() => handleFileSelect(setCertPath, 'Client Cert', ['crt', 'pem'])}
-                    t={t}
                   />
                   <SecurityInput 
                     label={t('mqtt_sec_lbl_key')} // "Client Private Key (.key)"
                     value={keyPath} isValid={keyValid} placeholder="C:\certs\client.key"
                     onChange={(e: any) => { setKeyPath(e.target.value); handleInputChange(() => {}, null); }}
                     onBrowse={() => handleFileSelect(setKeyPath, 'Private Key', ['key', 'pem'])}
-                    t={t}
                   />
                 </div>
             </div>

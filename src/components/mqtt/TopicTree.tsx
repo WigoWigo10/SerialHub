@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { ChevronRight, ChevronDown, Folder, FileText, Zap, Copy, Hash, AlignLeft, Braces, LineChart, Binary } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, Copy, Hash, AlignLeft, Braces, LineChart, Binary } from "lucide-react";
 import toast from "react-hot-toast";
 import { useLanguage } from "../../hooks/useLanguage";
 

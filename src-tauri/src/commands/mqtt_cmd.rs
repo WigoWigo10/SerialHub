@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::fs; 
+use std::net::ToSocketAddrs;
 
 #[derive(Clone, serde::Serialize)]
 pub struct MqttMessage {
@@ -43,6 +44,27 @@ pub fn check_file_exists(path: String) -> bool {
     p.exists() && p.is_file() 
 }
 
+// Função para forçar a resolução de DNS para IPv4
+fn resolve_dns_to_ipv4(host: &str) -> String {
+    // Adiciona uma porta fictícia só para o parser de endereços funcionar
+    let host_port = format!("{}:1883", host);
+    
+    // Tenta resolver o DNS
+    if let Ok(addrs) = host_port.to_socket_addrs() {
+        for addr in addrs {
+            // Se encontrar um endereço IPv4, retorna apenas o IP
+            if addr.is_ipv4() {
+                println!("[DNS] Host '{}' resolvido para IPv4: {}", host, addr.ip());
+                return addr.ip().to_string();
+            }
+        }
+    }
+    
+    // Se falhar ou só tiver IPv6, retorna o host original e deixa o SO decidir
+    println!("[DNS] Não foi possível forçar IPv4 para '{}'. Usando original.", host);
+    host.to_string()
+}
+
 #[tauri::command]
 pub async fn connect_mqtt(
     app: AppHandle,
@@ -66,9 +88,14 @@ pub async fn connect_mqtt(
     // Versão do Protocolo (4 = v3.1.1, 5 = v5)
     protocol_version: Option<u8>,
 ) -> Result<String, String> {
+
+    let final_broker_host = resolve_dns_to_ipv4(&broker);
+
+    println!("[MQTT] Iniciando conexão v3.1.1: {}:{}", final_broker_host, port);
+
     println!("\n==================================================");
     println!("[MQTT-DEBUG] Solicitação de Conexão Recebida");
-    println!("[MQTT-DEBUG] Broker: '{}' | Porta: {}", broker, port);
+    println!("[MQTT-DEBUG] Broker: '{}' | Porta: {}", final_broker_host, port);
     println!("[MQTT-DEBUG] Use WebSockets: {}", use_websockets);
     println!("[MQTT-DEBUG] Client ID: '{}'", client_id);
     println!("==================================================\n");
@@ -76,7 +103,7 @@ pub async fn connect_mqtt(
     let intentional_disconnect = Arc::new(AtomicBool::new(false));
     
     // Configuração básica
-    let mut mqttoptions = MqttOptions::new(client_id.clone(), broker.clone(), port);
+    let mut mqttoptions = MqttOptions::new(client_id.clone(), final_broker_host, port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // Aumentar tamanho do pacote para debug se necessário
     mqttoptions.set_max_packet_size(1024 * 1024, 1024 * 1024); 
@@ -210,7 +237,7 @@ pub async fn connect_mqtt(
                     match notification {
                         Event::Incoming(Packet::Publish(p)) => {
                             // Opcional: Logar mensagens recebidas (pode poluir o log)
-                            // println!("[MQTT-DEBUG] MSG Recebida: {:?}", p.topic);
+                            println!("[MQTT-DEBUG] MSG Recebida: {:?}", p.topic);
                             let payload_str = String::from_utf8_lossy(&p.payload).to_string();
                             let msg = MqttMessage {
                                 topic: p.topic,
@@ -224,7 +251,7 @@ pub async fn connect_mqtt(
                             let _ = app.emit("mqtt-status", "connected");
                         }
                         Event::Outgoing(p) => {
-                            // println!("[MQTT-DEBUG] Enviando pacote: {:?}", p);
+                            println!("[MQTT-DEBUG] Enviando pacote: {:?}", p);
                         }
                         _ => {
                             // Outros eventos internos (Ping, PubAck, etc)

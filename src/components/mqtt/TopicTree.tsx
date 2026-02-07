@@ -186,36 +186,40 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
           {viewMode === 'HEX' ? <Binary size={14}/> : (node.isJson ? <Braces size={14} /> : (hasChildren ? <Folder size={14} /> : (isNumber ? <Hash size={14} /> : <AlignLeft size={14}/>)))}
         </div>
 
-        <span className="font-semibold truncate max-w-[180px]" title={node.name}>
+        <span className="font-semibold truncate max-w-[140px] md:max-w-[250px]" title={node.name}>
           {node.name}
         </span>
 
         {displayValue && (
-          <div className="ml-auto flex items-center gap-2 min-w-0">
+          <div className="ml-auto flex items-center gap-2 min-w-0 pl-4 justify-end flex-1">
             {!node.isJson && node.timestamp && (
-              <span className="text-[10px] text-slate-400 font-normal opacity-70">
+              <span className="text-[10px] text-slate-400 font-normal opacity-70 shrink-0">
                 {node.timestamp.split(' ')[0]} 
               </span>
             )}
             
-            <span className={`truncate max-w-[200px] px-1.5 py-0.5 rounded ${valueColorClass}`} title={viewMode === 'HEX' ? t('mqtt_tt_hex_val') : (node.originalValue || node.value)}>
+            <span 
+                className={`truncate max-w-[150px] md:max-w-[400px] lg:max-w-[800px] px-1.5 py-0.5 rounded ${valueColorClass}`} 
+                title={viewMode === 'HEX' ? t('mqtt_tt_hex_val') : (node.originalValue || node.value)}
+            >
               {displayValue}
             </span>
 
-            {/* Botão de Gráfico (Apenas em ASCII) */}
-            {showChartIcon && (
-              <button 
-                onClick={handleChart}
-                className={`p-1 transition-opacity ${isActive ? "text-emerald-600 opacity-100 hover:text-red-500" : "text-slate-400 hover:text-emerald-500 opacity-0 group-hover:opacity-100"}`}
-                title={isActive ? t('mqtt_tt_hide_chart') : t('mqtt_tt_show_chart')}
-              >
-                <LineChart size={14} strokeWidth={isActive ? 2.5 : 2} />
-              </button>
-            )}
+            <div className="flex gap-1 shrink-0">
+                {showChartIcon && (
+                <button 
+                    onClick={handleChart}
+                    className={`p-1 transition-opacity ${isActive ? "text-emerald-600 opacity-100 hover:text-red-500" : "text-slate-400 hover:text-emerald-500 opacity-0 group-hover:opacity-100"}`}
+                    title={isActive ? t('mqtt_tt_hide_chart') : t('mqtt_tt_show_chart')}
+                >
+                    <LineChart size={14} strokeWidth={isActive ? 2.5 : 2} />
+                </button>
+                )}
 
-            <button onClick={handleCopy} className="p-1 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" title={t('mqtt_tt_copy')}>
-              <Copy size={12} />
-            </button>
+                <button onClick={handleCopy} className="p-1 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" title={t('mqtt_tt_copy')}>
+                <Copy size={12} />
+                </button>
+            </div>
           </div>
         )}
       </div>

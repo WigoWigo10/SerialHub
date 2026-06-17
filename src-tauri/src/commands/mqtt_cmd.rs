@@ -84,9 +84,6 @@ pub async fn connect_mqtt(
     lwt_qos: Option<u8>,
     lwt_retain: Option<bool>,
     use_websockets: bool,
-
-    // Versão do Protocolo (4 = v3.1.1, 5 = v5)
-    protocol_version: Option<u8>,
 ) -> Result<String, String> {
 
     let final_broker_host = resolve_dns_to_ipv4(&broker);

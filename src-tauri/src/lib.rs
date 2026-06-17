@@ -21,16 +21,7 @@ struct Win32_VideoController {
 #[serde(rename_all = "PascalCase")]
 struct Win32_PhysicalMemory {
     speed: u32,
-    manufacturer: String,
-    part_number: String,
     smbios_memory_type: u32,
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "PascalCase")]
-struct Win32_PnPEntity {
-    name: Option<String>,
 }
 
 #[allow(non_camel_case_types)]
@@ -47,7 +38,6 @@ struct Win32_Battery {
 struct Win32_NetworkAdapter {
     name: String,
     net_connection_status: Option<u16>,
-    adapter_type: Option<String>,
 }
 
 pub struct SerialState {

@@ -268,6 +268,7 @@ pub fn stop_recording(state: State<'_, SerialState>) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 #[command]
 pub fn start_spy_bridge(
     app: AppHandle,

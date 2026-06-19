@@ -23,6 +23,7 @@ export const translations = {
     manufacturer: 'Fabricante',
     serial_device: 'Dispositivo Serial',
     serial_native: 'Porta Serial Nativa/Virtual',
+    other_devices: 'Outros Dispositivos',
     expand_menu: "Expandir Menu",
 
     // --- TERMINAL AREA ---
@@ -305,6 +306,7 @@ export const translations = {
     manufacturer: 'Manufacturer',
     serial_device: 'Serial Device',
     serial_native: 'Native/Virtual Serial Port',
+    other_devices: 'Other Devices',
     expand_menu: "Expand Menu",
 
     // --- TERMINAL AREA ---
@@ -580,6 +582,7 @@ export const translations = {
     manufacturer: 'Fabricante',
     serial_device: 'Dispositivo Serie',
     serial_native: 'Puerto Serie Nativo/Virtual',
+    other_devices: 'Otros Dispositivos',
     expand_menu: "Expandir Menú",
 
     // --- TERMINAL AREA ---

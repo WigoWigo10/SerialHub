@@ -12,6 +12,8 @@ import {
   Clock,
   Gauge,
   ChevronDown,
+  Bluetooth,
+  Cpu,
 } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
@@ -27,6 +29,70 @@ interface SerialPort {
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
 
+function portIcon(type: string) {
+  if (type === "USB")       return <Usb size={18} />;
+  if (type === "Bluetooth") return <Bluetooth size={18} />;
+  if (type === "Virtual")   return <Cpu size={18} />;
+  return <Monitor size={18} />;
+}
+
+function PortButton({ port, activePort, onConnect, t }: {
+  port: SerialPort;
+  activePort: string | null;
+  onConnect: (name: string) => void;
+  t: (key: any) => string;
+}) {
+  const isActive = activePort === port.port_name;
+  const tooltip = port.port_type === "USB"
+    ? `${t("product")}: ${port.product}\n${t("manufacturer")}: ${port.manufacturer}\nVID: ${port.vid} | PID: ${port.pid}`
+    : t("serial_native");
+
+  return (
+    <button
+      onClick={() => onConnect(port.port_name)}
+      disabled={isActive}
+      title={tooltip}
+      className={`w-full text-left p-2 rounded-md group transition-all flex items-center gap-3 border mb-1
+        ${isActive
+          ? "bg-emerald-50 border-emerald-200 dark:bg-green-500/10 dark:border-green-500/50"
+          : "border-transparent hover:bg-slate-100 dark:hover:bg-slate-800"
+        }`}
+    >
+      <div className={`p-2 rounded shrink-0 transition-colors
+        ${isActive
+          ? "text-emerald-600 dark:text-green-400"
+          : "bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300"
+        }`}
+      >
+        {portIcon(port.port_type)}
+      </div>
+
+      <div className="overflow-hidden flex-1 min-w-0">
+        <div className="flex justify-between items-baseline">
+          <span className={`font-mono text-sm font-bold truncate ${isActive ? "text-emerald-700 dark:text-green-400" : "text-slate-700 dark:text-slate-200"}`}>
+            {port.port_name}
+          </span>
+          {port.port_type === "USB" && (
+            <span className="text-[9px] text-slate-400 dark:text-slate-600 font-mono ml-1 hidden group-hover:inline-block">
+              {port.vid}:{port.pid}
+            </span>
+          )}
+        </div>
+
+        <div className="text-[10px] text-slate-500 truncate" title={port.product || port.port_type}>
+          {isActive ? (
+            <span className="text-emerald-600 dark:text-green-500 font-medium animate-pulse">
+              ● {t("connected_status")}
+            </span>
+          ) : (
+            port.product || port.port_type
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export function Sidebar() {
   const { t } = useLanguage();
 
@@ -35,6 +101,7 @@ export function Sidebar() {
   const [selectedBaud, setSelectedBaud] = useState(115200);
 
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [showOtherPorts, setShowOtherPorts] = useState(false);
   const [dataBits, setDataBits] = useState(8);
   const [stopBits, setStopBits] = useState(1);
   const [parity, setParity] = useState("None");
@@ -369,80 +436,65 @@ export function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-800">
-        {ports.length > 0 && (
-          <div className="px-2 py-1 mb-2 text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800/50">
-            {t("devices")}
-          </div>
-        )}
-
         {ports.length === 0 && (
           <div className="text-center mt-10 text-slate-400 text-xs">
             {t("no_ports")}
           </div>
         )}
 
-        {ports.map((port) => (
-          <button
+        {/* USB Ports */}
+        {ports.filter(p => p.port_type === "USB").length > 0 && (
+          <div className="px-2 py-1 mb-2 text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800/50">
+            {t("devices")}
+          </div>
+        )}
+
+        {ports.filter(p => p.port_type === "USB").map((port) => (
+          <PortButton
             key={port.port_name}
-            onClick={() => handleConnect(port.port_name)}
-            disabled={activePort === port.port_name}
-            title={
-              port.port_type === "USB"
-                ? `${t("product")}: ${port.product}\n${t("manufacturer")}: ${port.manufacturer}\nVID: ${port.vid} | PID: ${port.pid}`
-                : t("serial_native")
-            }
-            className={`w-full text-left p-2 rounded-md group transition-all flex items-center gap-3 border mb-1 
-            ${
-              activePort === port.port_name
-                ? "bg-emerald-50 border-emerald-200 dark:bg-green-500/10 dark:border-green-500/50"
-                : "border-transparent hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
-          >
-            <div
-              className={`p-2 rounded shrink-0 transition-colors 
-                ${
-                  activePort === port.port_name
-                    ? "text-emerald-600 dark:text-green-400"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300"
-                }`}
-            >
-              {port.port_type === "USB" ? (
-                <Usb size={18} />
-              ) : (
-                <Monitor size={18} />
-              )}
-            </div>
-
-            <div className="overflow-hidden flex-1 min-w-0">
-              <div className="flex justify-between items-baseline">
-                <span
-                  className={`font-mono text-sm font-bold truncate ${activePort === port.port_name ? "text-emerald-700 dark:text-green-400" : "text-slate-700 dark:text-slate-200"}`}
-                >
-                  {port.port_name}
-                </span>
-
-                {port.port_type === "USB" && (
-                  <span className="text-[9px] text-slate-400 dark:text-slate-600 font-mono ml-1 hidden group-hover:inline-block">
-                    {port.vid}:{port.pid}
-                  </span>
-                )}
-              </div>
-
-              <div
-                className="text-[10px] text-slate-500 truncate"
-                title={port.product || port.port_type}
-              >
-                {activePort === port.port_name ? (
-                  <span className="text-emerald-600 dark:text-green-500 font-medium animate-pulse">
-                    ● {t("connected_status")}
-                  </span>
-                ) : (
-                  port.product || t("serial_device")
-                )}
-              </div>
-            </div>
-          </button>
+            port={port}
+            activePort={activePort}
+            onConnect={handleConnect}
+            t={t}
+          />
         ))}
+
+        {/* Other Ports (Native / Virtual / Bluetooth) */}
+        {ports.filter(p => p.port_type !== "USB").length > 0 && (
+          <div className="mt-2">
+            <button
+              onClick={() => setShowOtherPorts(v => !v)}
+              className="w-full flex items-center justify-between px-2 py-1 text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800/50 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            >
+              <span>{t("other_devices")}</span>
+              <div className="flex items-center gap-1">
+                <span className="bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-full px-1.5 py-0.5 text-[9px] font-bold">
+                  {ports.filter(p => p.port_type !== "USB").length}
+                </span>
+                <ChevronDown
+                  size={12}
+                  className={`transition-transform duration-200 ${showOtherPorts ? "rotate-180" : ""}`}
+                />
+              </div>
+            </button>
+
+            <div className={`grid transition-all duration-300 ease-in-out ${showOtherPorts ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+              <div className="overflow-hidden">
+                <div className="pt-1 space-y-1">
+                  {ports.filter(p => p.port_type !== "USB").map((port) => (
+                    <PortButton
+                      key={port.port_name}
+                      port={port}
+                      activePort={activePort}
+                      onConnect={handleConnect}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {activePort && (

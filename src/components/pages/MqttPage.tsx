@@ -955,7 +955,7 @@ export function MqttPage() {
               <TopicTree
                 messages={messages}
                 onToggleChart={handleToggleChart}
-                recordedTopics={Object.keys(chartHistory)}
+                recordedTopics={chartTopics}
                 viewMode={viewMode}
               />
             </div>

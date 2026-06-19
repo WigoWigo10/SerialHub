@@ -18,7 +18,7 @@ interface SettingsState {
   txBytes: number;
   rxBytes: number;
 
-  activityMode: string;
+  activityMode: ActivityMode;
   isSidebarOpen: boolean;
 
   setTheme: (theme: 'dark' | 'light') => void;
@@ -35,7 +35,7 @@ interface SettingsState {
   addRxBytes: (bytes: number) => void;
   resetCounters: () => void;
 
-  setActivityMode: (mode: string) => void;
+  setActivityMode: (mode: ActivityMode) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (isOpen: boolean) => void;
 }
@@ -66,11 +66,11 @@ export const useSettingsStore = create<SettingsState>()(
       toggleLocalEcho: () => set((state) => ({ localEcho: !state.localEcho })),
       toggleTimestamp: () => set((state) => ({ showTimestamp: !state.showTimestamp })),
       
-      setConnected: (status) => set({ 
+      setConnected: (status) => set({
         connected: status,
         connectionStartTime: status ? Date.now() : null,
-        txBytes: status ? 0 : 0, 
-        rxBytes: status ? 0 : 0
+        txBytes: 0,
+        rxBytes: 0,
       }),
 
       setActivePort: (port) => set({ activePort: port }),

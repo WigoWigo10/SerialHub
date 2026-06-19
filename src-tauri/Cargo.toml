@@ -1,6 +1,6 @@
-[package]
+﻿[package]
 name = "serial-hub"
-version = "1.2.0"
+version = "1.2.1"
 description = "A modern, high-performance serial monitor"
 authors = ["WigoWigo10"]
 edition = "2021"

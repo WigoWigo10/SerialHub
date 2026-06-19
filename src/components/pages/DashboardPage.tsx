@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+﻿import { useEffect, useState, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { 
   Cpu, MemoryStick, AlertTriangle, CheckCircle2, LayoutDashboard,
@@ -151,7 +151,7 @@ export function DashboardPage() {
                     </p>
             </div>
             <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-500">
-                v1.2.0
+                v1.2.1
             </div>
         </div>
 
@@ -169,7 +169,7 @@ export function DashboardPage() {
                         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{stats.cpu_brand}</h2>
                         <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500">
                             <span>{stats.cpu_vendor}</span>
-                            <span>•</span>
+                            <span>â€¢</span>
                             <span className={stats.cpu_freq > 3000 ? "text-emerald-500 font-bold" : ""}>{stats.cpu_freq} MHz</span>
                         </div>
                     </div>

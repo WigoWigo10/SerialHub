@@ -1,4 +1,4 @@
-import { 
+﻿import { 
   Laptop, Moon, Sun, Globe, SlidersHorizontal, 
   Terminal, Info, CheckCircle2, Github, ExternalLink 
 } from "lucide-react";
@@ -30,7 +30,7 @@ export function SettingsPage() {
                 </p>
             </div>
             <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-500">
-                v1.2.0
+                v1.2.1
             </div>
         </div>
 
@@ -137,7 +137,7 @@ export function SettingsPage() {
                         className="h-10 w-10 mr-4 shadow-md rounded-full group-hover:scale-110 transition-transform"
                     />
                     <div className="text-left flex-1 min-w-0">
-                        <h3 className={`font-bold text-sm ${language === 'pt-BR' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>Português</h3>
+                        <h3 className={`font-bold text-sm ${language === 'pt-BR' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>PortuguÃªs</h3>
                         <p className="text-[10px] text-slate-500">Brasil</p>
                     </div>
                     {language === 'pt-BR' && <div className="text-emerald-500 animate-in zoom-in"><CheckCircle2 size={18} /></div>}
@@ -156,8 +156,8 @@ export function SettingsPage() {
                         className="h-10 w-10 mr-4 shadow-md rounded-full group-hover:scale-110 transition-transform"
                     />
                     <div className="text-left flex-1 min-w-0">
-                        <h3 className={`font-bold text-sm ${language === 'es' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>Español</h3>
-                        <p className="text-[10px] text-slate-500">España</p>
+                        <h3 className={`font-bold text-sm ${language === 'es' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>EspaÃ±ol</h3>
+                        <p className="text-[10px] text-slate-500">EspaÃ±a</p>
                     </div>
                     {language === 'es' && <div className="text-emerald-500 animate-in zoom-in"><CheckCircle2 size={18} /></div>}
                 </button>

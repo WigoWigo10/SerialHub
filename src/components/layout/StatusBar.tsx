@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Wifi, WifiOff, Circle } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
 
 export function StatusBar() {
-  const [version, setVersion] = useState("1.2.0");
+  const [version, setVersion] = useState("1.2.1");
   const [osName, setOsName] = useState("Unknown");
   
   const { isRecording, connected, activePort } = useSettingsStore();

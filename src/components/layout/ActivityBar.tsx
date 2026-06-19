@@ -13,8 +13,10 @@ export function ActivityBar() {
   const { activityMode, setActivityMode, toggleSidebar } = useSettingsStore();
   const { t } = useLanguage();
 
+  const MODES_WITH_SIDEBAR = ['SERIAL', 'monitor', 'SPY', 'BLUETOOTH'];
+
   const handleModeClick = (mode: string) => {
-    if (activityMode === mode && mode !== 'SETTINGS') {
+    if (activityMode === mode && MODES_WITH_SIDEBAR.includes(mode)) {
       toggleSidebar();
     } else {
       setActivityMode(mode);

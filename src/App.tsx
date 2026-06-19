@@ -143,7 +143,7 @@ function App() {
       <StatusBar />
 
       {/* Botão de Expandir Sidebar ("Gutter Handle") */}
-      {!isSidebarOpen && !isSettingsMode && (
+      {!isSidebarOpen && !isSettingsMode && activityMode !== "DASHBOARD" && activityMode !== "MQTT" && (
         <button
           onClick={() => setSidebarOpen(true)}
           className="absolute left-12 top-1/2 -translate-y-1/2 z-20 

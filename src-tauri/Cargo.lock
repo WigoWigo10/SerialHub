@@ -3642,7 +3642,7 @@ dependencies = [
 
 [[package]]
 name = "serial-hub"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "env_logger",

@@ -30,7 +30,7 @@ export function SettingsPage() {
                 </p>
             </div>
             <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-500">
-                v1.1.0
+                v1.2.0
             </div>
         </div>
 

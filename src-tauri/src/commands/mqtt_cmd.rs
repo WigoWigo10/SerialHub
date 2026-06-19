@@ -226,6 +226,7 @@ pub async fn connect_mqtt(
         loop {
             if intended_disconnect_checker.load(Ordering::Relaxed) {
                 println!("[MQTT-DEBUG] Desconexão intencional solicitada. Saindo do loop.");
+                let _ = app.emit("mqtt-status", "disconnected");
                 break;
             }
 
@@ -233,7 +234,6 @@ pub async fn connect_mqtt(
                 Ok(notification) => {
                     match notification {
                         Event::Incoming(Packet::Publish(p)) => {
-                            // Opcional: Logar mensagens recebidas (pode poluir o log)
                             println!("[MQTT-DEBUG] MSG Recebida: {:?}", p.topic);
                             let payload_str = String::from_utf8_lossy(&p.payload).to_string();
                             let msg = MqttMessage {
@@ -250,28 +250,23 @@ pub async fn connect_mqtt(
                         Event::Outgoing(p) => {
                             println!("[MQTT-DEBUG] Enviando pacote: {:?}", p);
                         }
-                        _ => {
-                            // Outros eventos internos (Ping, PubAck, etc)
-                        } 
+                        _ => {}
                     }
                 }
                 Err(e) => {
                     if intended_disconnect_checker.load(Ordering::Relaxed) {
-                        break; 
+                        let _ = app.emit("mqtt-status", "disconnected");
+                        break;
                     }
-                    // AQUI ESTÁ O ERRO REAL
                     eprintln!("\n[MQTT-DEBUG] ERRO CRÍTICO NO EVENTLOOP: {:?}", e);
                     eprintln!("[MQTT-DEBUG] Detalhes do erro: {}\n", e);
-                    
                     let _ = app.emit("mqtt-error", e.to_string());
                     let _ = app.emit("mqtt-status", "disconnected");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    break; 
+                    break;
                 }
             }
         }
-        println!("[MQTT-DEBUG] Loop encerrado. Cliente desconectado.");
-        let _ = app.emit("mqtt-status", "disconnected"); 
+        println!("[MQTT-DEBUG] Loop encerrado.");
     });
 
     Ok(format!("Iniciando conexão..."))

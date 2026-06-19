@@ -174,6 +174,9 @@ export function MqttPage() {
   >({});
 
   const toastIdRef = useRef<string | undefined>(undefined);
+  const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; });
 
   useEffect(() => {
     if (useWebsockets) {
@@ -453,22 +456,27 @@ export function MqttPage() {
       const status = event.payload;
 
       if (status === "connected") {
+        if (safetyTimeoutRef.current !== null) {
+          clearTimeout(safetyTimeoutRef.current);
+          safetyTimeoutRef.current = null;
+        }
+        isConnectingRef.current = false;
         setIsConnected(true);
         setIsConnecting(false);
-        
+
         if (toastIdRef.current) {
-          toast.success(t('mqtt_toast_connected'), { id: toastIdRef.current });
+          toast.success(tRef.current('mqtt_toast_connected'), { id: toastIdRef.current });
           toastIdRef.current = undefined;
         } else {
-          toast.success(t('mqtt_toast_connected'));
+          toast.success(tRef.current('mqtt_toast_connected'));
         }
       } else if (status === "disconnected") {
         setIsConnected(false);
         setIsConnecting(false);
         setActiveSubs([]);
-        
+
         if (toastIdRef.current) {
-          toast.success(t('mqtt_toast_disconnected'), { id: toastIdRef.current, icon: "🔌" });
+          toast.success(tRef.current('mqtt_toast_disconnected'), { id: toastIdRef.current, icon: "🔌" });
           toastIdRef.current = undefined;
         }
       }
@@ -478,12 +486,28 @@ export function MqttPage() {
     // 3. Listener de Erros
     const pError = listen<string>("mqtt-error", (event) => {
       console.error("[LISTENER-DEBUG] Evento de ERRO recebido:", event.payload);
+
+      // Cancela o timer de segurança se ainda estiver pendente
+      if (safetyTimeoutRef.current !== null) {
+        clearTimeout(safetyTimeoutRef.current);
+        safetyTimeoutRef.current = null;
+      }
+
+      // Se o timer de segurança já disparou e tratou o erro, apenas limpa o estado
+      if (!isConnectingRef.current) {
+        setIsConnected(false);
+        return;
+      }
+
+      isConnectingRef.current = false;
       setIsConnecting(false);
       setIsConnected(false);
-      
+
       let errorMsg = event.payload;
-      if (errorMsg.includes("NetworkTimeout")) errorMsg = t('mqtt_err_timeout');
-      if (errorMsg.includes("refused")) errorMsg = t('mqtt_err_refused');
+      if (errorMsg.includes("Network timeout") || errorMsg.includes("NetworkTimeout")) {
+        errorMsg = tRef.current('mqtt_err_timeout');
+      }
+      if (errorMsg.includes("refused")) errorMsg = tRef.current('mqtt_err_refused');
 
       if (toastIdRef.current) {
         toast.error(errorMsg, { id: toastIdRef.current, duration: 5000 });
@@ -497,16 +521,15 @@ export function MqttPage() {
     // FUNÇÃO DE LIMPEZA (CLEANUP)
     return () => {
       console.log("[LISTENER-DEBUG] Limpando listeners...");
-      // Aguarda as promessas resolverem (mesmo que o componente já tenha desmontado) e chama o unlisten
       unlistenPromises.forEach(p => {
         p.then(unlisten => unlisten());
       });
     };
-  }, [t]);
+  }, []);
 
   const handleConnectToggle = async () => {
-    if (isConnecting) return;
-    
+    if (isConnectingRef.current) return;
+
     if (isConnected) {
       // --- LÓGICA DE DESCONEXÃO ---
       toastIdRef.current = toast.loading(t('mqtt_msg_disconnecting'));
@@ -517,6 +540,7 @@ export function MqttPage() {
       }
     } else {
       // --- LÓGICA DE CONEXÃO ---
+      isConnectingRef.current = true;
       setIsConnecting(true);
       toastIdRef.current = toast.loading(`${t('mqtt_msg_connecting')} ${broker}:${port}...`);
       
@@ -539,12 +563,13 @@ export function MqttPage() {
       console.log("[FRONT-DEBUG] Tentando conectar > Params:", connectionParams);
       
       // --- TIMER DE SEGURANÇA ---
-      setTimeout(() => {
-        if (isConnectingRef.current === true) {
-          toast.error(t('mqtt_err_timeout'), { id: toastIdRef.current });
-          toastIdRef.current = undefined;
-          setIsConnecting(false);
-        }
+      safetyTimeoutRef.current = setTimeout(() => {
+        safetyTimeoutRef.current = null;
+        if (!isConnectingRef.current) return;
+        isConnectingRef.current = false;
+        toast.error(tRef.current('mqtt_err_timeout'), { id: toastIdRef.current });
+        toastIdRef.current = undefined;
+        setIsConnecting(false);
       }, 5000);
 
       try {

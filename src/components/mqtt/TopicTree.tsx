@@ -165,13 +165,15 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
 
   return (
     <div className="select-none font-mono text-sm">
-      <div 
+      <div
         className={`
-          group flex items-center gap-1 py-1 px-2 cursor-pointer transition-all duration-200 border-b border-transparent
+          group flex items-center gap-1 py-1 px-2 cursor-pointer transition-all duration-200 border-b border-l-2 border-transparent
           ${depth === 0 ? 'ml-0' : 'ml-4'}
-          ${flash 
-            ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-100" 
-            : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+          ${flash
+            ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-100"
+            : isActive
+              ? "bg-emerald-50/60 dark:bg-emerald-900/20 border-l-emerald-500 dark:border-l-emerald-400 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/30 text-slate-700 dark:text-slate-300"
+              : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
           }
         `}
         onClick={() => setIsOpen(!isOpen)}

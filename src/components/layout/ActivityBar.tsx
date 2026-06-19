@@ -1,21 +1,21 @@
-import { 
+import {
   Cable,
-  Bluetooth, 
-  Bug, 
-  LayoutDashboard, 
+  Bluetooth,
+  Bug,
+  LayoutDashboard,
   Settings,
   Cloud
 } from "lucide-react";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useSettingsStore, ActivityMode } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
 
 export function ActivityBar() {
   const { activityMode, setActivityMode, toggleSidebar } = useSettingsStore();
   const { t } = useLanguage();
 
-  const MODES_WITH_SIDEBAR = ['SERIAL', 'monitor', 'SPY', 'BLUETOOTH'];
+  const MODES_WITH_SIDEBAR: ActivityMode[] = ['SERIAL', 'monitor', 'SPY', 'BLUETOOTH'];
 
-  const handleModeClick = (mode: string) => {
+  const handleModeClick = (mode: ActivityMode) => {
     if (activityMode === mode && MODES_WITH_SIDEBAR.includes(mode)) {
       toggleSidebar();
     } else {
@@ -23,7 +23,7 @@ export function ActivityBar() {
     }
   };
 
-  const buttons = [
+  const buttons: { id: ActivityMode; icon: any; title: string }[] = [
     { id: 'SERIAL',
       icon: Cable,
       title: t('activity_monitor')

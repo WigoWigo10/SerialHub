@@ -5,7 +5,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
 
 export function StatusBar() {
-  const [version, setVersion] = useState("1.0.0");
+  const [version, setVersion] = useState("1.1.0");
   const [osName, setOsName] = useState("Unknown");
   
   const { isRecording, connected, activePort } = useSettingsStore();

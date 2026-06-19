@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { SpySidebar } from "./components/layout/SpySidebar";
 import { BluetoothSidebar } from "./components/layout/BluetoothSidebar";
@@ -11,8 +11,9 @@ import { DashboardPage } from "./components/pages/DashboardPage";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useLanguage } from "./hooks/useLanguage";
 import { Toaster } from "react-hot-toast";
-import { Bluetooth, Bug } from "lucide-react";
+import { Bluetooth, Bug, ChevronRight } from "lucide-react";
 import { useDataMonitor } from "./hooks/useDataMonitor";
+import { MqttPage } from "./components/pages/MqttPage";
 
 const EmptyWorkspace = ({
   icon: Icon,
@@ -24,7 +25,7 @@ const EmptyWorkspace = ({
   desc: string;
 }) => (
   <div className="flex-1 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-900/50 text-slate-300 dark:text-slate-700 p-10 animate-in fade-in zoom-in-95 duration-300">
-    <div className="p-6 rounded-full bg-slate-100 dark:bg-slate-800 mb-4 shadow-sm">
+    <div className="bg-slate-100 dark:bg-slate-800 p-6 rounded-full mb-4 shadow-sm">
       <Icon size={64} strokeWidth={1} />
     </div>
     <h1 className="text-2xl font-bold text-slate-400 dark:text-slate-600 mb-2">
@@ -35,16 +36,17 @@ const EmptyWorkspace = ({
 );
 
 function App() {
-  useDataMonitor();
-  const { activityMode, isSidebarOpen, theme } = useSettingsStore();
+  const { theme, activityMode, isSidebarOpen, setSidebarOpen } = useSettingsStore();
   const { t } = useLanguage();
+  useDataMonitor();
 
-  const showSidebar =
-    isSidebarOpen &&
-    (activityMode === "SERIAL" ||
-      activityMode === "monitor" ||
-      activityMode === "BLUETOOTH" ||
-      activityMode === "SPY");
+  const [mqttInitialized, setMqttInitialized] = useState(false);
+
+  useEffect(() => {
+    if (activityMode === "MQTT" && !mqttInitialized) {
+      setMqttInitialized(true);
+    }
+  }, [activityMode, mqttInitialized]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -53,35 +55,56 @@ function App() {
     root.style.colorScheme = theme;
   }, [theme]);
 
-  const isSettingsMode = activityMode === "SETTINGS";
   const isSerialMode = activityMode === "SERIAL" || activityMode === "monitor";
+  const isSettingsMode = activityMode === "SETTINGS";
+
+  const showSidebar =
+    isSidebarOpen &&
+    activityMode !== "SETTINGS" &&
+    activityMode !== "DASHBOARD" &&
+    activityMode !== "MQTT";
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white overflow-hidden select-none font-sans selection:bg-blue-500/30 transition-colors duration-300">
-      <div className="flex-1 flex overflow-hidden relative">
-        <ActivityBar />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-sans selection:bg-blue-500/30 transition-colors duration-300">
+      
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* ActivityBar Sempre Visível e Fixa à Esquerda */}
+        <div className="z-30 h-full shrink-0">
+            <ActivityBar />
+        </div>
 
-        {isSettingsMode ? (
-          <SettingsPage />
-        ) : (
-          <>
+        {/* === ÁREA DE SETTINGS === */}
+        {isSettingsMode && (
+           <div className="flex-1 flex overflow-hidden bg-slate-50 dark:bg-slate-950 animate-in fade-in duration-200">
+              <SettingsPage />
+           </div>
+        )}
+
+        {/* === WORKSPACE PRINCIPAL (TERMINAL / MQTT / DASHBOARD) === */}
+        <div className={`flex-1 flex overflow-hidden relative ${isSettingsMode ? 'hidden' : 'flex'}`}>
+            
+            {/* Wrapper da Sidebar (Animação de Largura) */}
             <div
               className={`
-                      transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0 
-                      bg-white dark:bg-slate-900 
-                      ${showSidebar ? "w-64 opacity-100 border-r border-slate-200 dark:border-slate-800" : "w-0 opacity-0 border-none"}
-                  `}
+                transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1.0)] 
+                overflow-hidden flex-shrink-0 
+                bg-white dark:bg-slate-900 
+                ${showSidebar 
+                  ? "w-64 opacity-100 border-r border-slate-200 dark:border-slate-800" 
+                  : "w-0 opacity-0 border-none"
+                }
+              `}
             >
+              {/* Conteúdo da Sidebar com largura fixa para não esmagar */}
               <div className="w-64 h-full flex flex-col">
-                {(activityMode === "SERIAL" || activityMode === "monitor") && (
-                  <Sidebar />
-                )}
+                {isSerialMode && <Sidebar />}
                 {activityMode === "SPY" && <SpySidebar />}
                 {activityMode === "BLUETOOTH" && <BluetoothSidebar />}
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0">
+            {/* Área de Conteúdo (Direita) */}
+            <div className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0 bg-slate-50 dark:bg-slate-950">
               <div
                 className={`flex-col h-full w-full overflow-hidden ${isSerialMode ? "flex" : "hidden"}`}
                 style={{ minWidth: "300px" }}
@@ -91,6 +114,12 @@ function App() {
               </div>
 
               {activityMode === "DASHBOARD" && <DashboardPage />}
+              
+              {mqttInitialized && (
+                <div className={`flex-1 flex-col h-full overflow-hidden ${activityMode === "MQTT" ? "flex" : "hidden"}`}>
+                   <MqttPage />
+                </div>
+              )}
 
               {activityMode === "BLUETOOTH" && (
                 <EmptyWorkspace
@@ -108,11 +137,31 @@ function App() {
                 />
               )}
             </div>
-          </>
-        )}
+        </div>
       </div>
 
       <StatusBar />
+
+      {/* Botão de Expandir Sidebar ("Gutter Handle") */}
+      {!isSidebarOpen && !isSettingsMode && activityMode !== "DASHBOARD" && activityMode !== "MQTT" && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="absolute left-12 top-1/2 -translate-y-1/2 z-20 
+                      flex items-center justify-center
+                      w-4 h-12 rounded-r-xl
+                      bg-white dark:bg-slate-900 
+                      border-y border-r border-slate-200 dark:border-slate-800
+                      text-slate-400 hover:text-blue-500 hover:w-6 hover:pl-1
+                      shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]
+                      transition-all duration-300 ease-out cursor-pointer group"
+          title={t('expand_menu')}
+        >
+          <ChevronRight 
+            size={16} 
+            className="group-hover:scale-110 transition-transform duration-200 opacity-70 group-hover:opacity-100" 
+          />
+        </button>
+      )}
 
       <Toaster
         position="bottom-right"

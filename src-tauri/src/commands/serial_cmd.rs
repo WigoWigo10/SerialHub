@@ -24,19 +24,23 @@ pub fn list_ports() -> Result<Vec<SerialPortInfo>, String> {
         Ok(ports) => {
             let mut formatted_ports = Vec::new();
             for p in ports {
-                let mut p_type = "Native".to_string();
                 let mut vid = "".to_string();
                 let mut pid = "".to_string();
                 let mut manuf = "".to_string();
                 let mut prod = "".to_string();
 
-                if let SerialPortType::UsbPort(info) = p.port_type {
-                    p_type = "USB".to_string();
-                    vid = format!("{:04x}", info.vid);
-                    pid = format!("{:04x}", info.pid);
-                    manuf = info.manufacturer.unwrap_or_default();
-                    prod = info.product.unwrap_or_default();
-                }
+                let p_type = match p.port_type {
+                    SerialPortType::UsbPort(info) => {
+                        vid = format!("{:04x}", info.vid);
+                        pid = format!("{:04x}", info.pid);
+                        manuf = info.manufacturer.unwrap_or_default();
+                        prod = info.product.unwrap_or_default();
+                        "USB".to_string()
+                    }
+                    SerialPortType::BluetoothPort => "Bluetooth".to_string(),
+                    SerialPortType::PciPort => "Native".to_string(),
+                    SerialPortType::Unknown => "Virtual".to_string(),
+                };
 
                 formatted_ports.push(SerialPortInfo {
                     port_name: p.port_name,
@@ -205,7 +209,11 @@ pub fn write_serial(
                         let _ = file.flush();
                     }
                 }
+
                 let _ = app.emit("serial-tx", size);
+                
+                let _ = app.emit("serial-sent", bytes.to_vec());
+
                 Ok(size)
             }
             Err(e) => Err(format!("Erro escrita: {}", e)),
@@ -264,6 +272,7 @@ pub fn stop_recording(state: State<'_, SerialState>) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 #[command]
 pub fn start_spy_bridge(
     app: AppHandle,

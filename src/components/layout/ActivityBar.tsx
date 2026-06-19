@@ -3,7 +3,8 @@ import {
   Bluetooth, 
   Bug, 
   LayoutDashboard, 
-  Settings 
+  Settings,
+  Cloud
 } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
@@ -12,8 +13,10 @@ export function ActivityBar() {
   const { activityMode, setActivityMode, toggleSidebar } = useSettingsStore();
   const { t } = useLanguage();
 
+  const MODES_WITH_SIDEBAR = ['SERIAL', 'monitor', 'SPY', 'BLUETOOTH'];
+
   const handleModeClick = (mode: string) => {
-    if (activityMode === mode && mode !== 'SETTINGS') {
+    if (activityMode === mode && MODES_WITH_SIDEBAR.includes(mode)) {
       toggleSidebar();
     } else {
       setActivityMode(mode);
@@ -21,10 +24,29 @@ export function ActivityBar() {
   };
 
   const buttons = [
-    { id: 'SERIAL', icon: Cable, title: t('activity_monitor') },
-    { id: 'BLUETOOTH', icon: Bluetooth, title: t('activity_bluetooth') },
-    { id: 'SPY', icon: Bug, title: t('activity_spy') },
-    { id: 'DASHBOARD', icon: LayoutDashboard, title: t('activity_dashboard') },
+    { id: 'SERIAL',
+      icon: Cable,
+      title: t('activity_monitor')
+    },
+    { 
+      id: "MQTT", 
+      icon: Cloud, 
+      title: "MQTT / IoT"
+    },
+    { id:
+      'BLUETOOTH',
+      icon: Bluetooth,
+      title: t('activity_bluetooth')
+    },
+    { id:
+      'SPY',
+      icon: Bug,
+      title: t('activity_spy')
+    },
+    { id: 'DASHBOARD',
+      icon: LayoutDashboard,
+      title: t('activity_dashboard')
+    },
   ];
 
   return (

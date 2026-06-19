@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export type ActivityMode = 'SERIAL' | 'SETTINGS' | 'DASHBOARD' | 'monitor' | 'BLUETOOTH' | 'SPY' | 'MQTT';
+
 interface SettingsState {
   theme: 'dark' | 'light';
   viewMode: 'ASCII' | 'HEX';

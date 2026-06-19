@@ -134,7 +134,7 @@ export function MqttPage() {
   const [certPath, setCertPath] = useState("");
   const [keyPath, setKeyPath] = useState("");
 
-  const securityBackupRef = useRef({ ca: "", cert: "", key: "" });
+  const securityBackupRef = useRef({ ca: "", cert: "", key: "", profileName: null as string | null });
 
   // Estados de Validação (null = neutro, true = válido, false = inválido)
   const [caValid, setCaValid] = useState<boolean | null>(null);
@@ -162,7 +162,7 @@ export function MqttPage() {
   
   // Modal e Backup LWT
   const [isLwtModalOpen, setIsLwtModalOpen] = useState(false);
-  const lwtBackupRef = useRef({ topic: "", payload: "", qos: 0, retain: false });
+  const lwtBackupRef = useRef({ topic: "", payload: "", qos: 0, retain: false, profileName: null as string | null });
 
   // Estado para WebSockets
   const [useWebsockets, setUseWebsockets] = useState(false);
@@ -194,7 +194,7 @@ export function MqttPage() {
 
   // --- LÓGICA DO MODAL LWT (SNAPSHOT/ROLLBACK) ---
   const openLwtModal = () => {
-    lwtBackupRef.current = { topic: lwtTopic, payload: lwtPayload, qos: lwtQos, retain: lwtRetain };
+    lwtBackupRef.current = { topic: lwtTopic, payload: lwtPayload, qos: lwtQos, retain: lwtRetain, profileName: activeProfileName };
     setIsLwtModalOpen(true);
   };
 
@@ -203,15 +203,19 @@ export function MqttPage() {
     setLwtPayload(lwtBackupRef.current.payload);
     setLwtQos(lwtBackupRef.current.qos);
     setLwtRetain(lwtBackupRef.current.retain);
-    handleInputChange(() => {}, null);
+    setActiveProfileName(lwtBackupRef.current.profileName);
     setIsLwtModalOpen(false);
   };
 
   const confirmLwtModal = () => {
-    // Validação: Sugestão de boas práticas
     if (lwtTopic && !lwtTopic.includes("/")) {
       toast(t('mqtt_toast_lwt_hint'), { icon: '💡' });
     }
+    const changed = lwtTopic !== lwtBackupRef.current.topic ||
+      lwtPayload !== lwtBackupRef.current.payload ||
+      lwtQos !== lwtBackupRef.current.qos ||
+      lwtRetain !== lwtBackupRef.current.retain;
+    if (changed) setActiveProfileName(null);
     setIsLwtModalOpen(false);
   };  
 
@@ -231,8 +235,6 @@ export function MqttPage() {
         
       if (selected && typeof selected === 'string') {
         setter(selected);
-        handleInputChange(() => {}, null); // Força atualização do estado 'sujo' se necessário
-        
         toast.success(`${label} ${t('mqtt_toast_file_ok')}`, { icon: '📂' });
       }
     } catch (err) {
@@ -299,7 +301,7 @@ export function MqttPage() {
   };
 
   const openSecurityModal = () => {
-    securityBackupRef.current = { ca: caPath, cert: certPath, key: keyPath };
+    securityBackupRef.current = { ca: caPath, cert: certPath, key: keyPath, profileName: activeProfileName };
     console.log(
       "[SEC-DEBUG] Backup de segurança criado:",
       securityBackupRef.current
@@ -315,9 +317,7 @@ export function MqttPage() {
     setCaPath(securityBackupRef.current.ca);
     setCertPath(securityBackupRef.current.cert);
     setKeyPath(securityBackupRef.current.key);
-
-    handleInputChange(() => {}, null);
-
+    setActiveProfileName(securityBackupRef.current.profileName);
     setIsSecurityModalOpen(false);
   };
 
@@ -332,7 +332,10 @@ export function MqttPage() {
       return;
     }
 
-    console.log("[SEC-DEBUG] Alterações confirmadas. Mantendo novos valores.");
+    const changed = caPath !== securityBackupRef.current.ca ||
+      certPath !== securityBackupRef.current.cert ||
+      keyPath !== securityBackupRef.current.key;
+    if (changed) setActiveProfileName(null);
     setIsSecurityModalOpen(false);
   };
 
@@ -1049,11 +1052,10 @@ export function MqttPage() {
               </div>
               {(caPath || certPath || keyPath) && (
                 <button 
-                  onClick={() => { 
+                  onClick={() => {
                     console.log("[SEC-DEBUG] Ação: Limpar Tudo acionada.");
-                    setCaPath(""); setCertPath(""); setKeyPath(""); 
-                    handleInputChange(() => {}, null); 
-                    toast.success(t('mqtt_sec_clean_toast')); // "Configuração TLS limpa"
+                    setCaPath(""); setCertPath(""); setKeyPath("");
+                    toast.success(t('mqtt_sec_clean_toast'));
                   }}
                   className="text-xs text-red-500 hover:text-red-700 underline font-bold"
                 >
@@ -1077,7 +1079,7 @@ export function MqttPage() {
               <SecurityInput 
                 label={t('mqtt_sec_lbl_ca')} // "CA Certificate (.crt)"
                 value={caPath} isValid={caValid} placeholder="C:\certs\ca.crt" 
-                onChange={(e: any) => { setCaPath(e.target.value); handleInputChange(() => {}, null); }}
+                onChange={(e: any) => setCaPath(e.target.value)}
                 onBrowse={() => handleFileSelect(setCaPath, 'CA Cert', ['crt', 'pem', 'ca'])}
               />
                 
@@ -1085,13 +1087,13 @@ export function MqttPage() {
                   <SecurityInput 
                     label={t('mqtt_sec_lbl_cert')} // "Client Certificate (.crt)"
                     value={certPath} isValid={certValid} placeholder="C:\certs\client.crt"
-                    onChange={(e: any) => { setCertPath(e.target.value); handleInputChange(() => {}, null); }}
+                    onChange={(e: any) => setCertPath(e.target.value)}
                     onBrowse={() => handleFileSelect(setCertPath, 'Client Cert', ['crt', 'pem'])}
                   />
                   <SecurityInput 
                     label={t('mqtt_sec_lbl_key')} // "Client Private Key (.key)"
                     value={keyPath} isValid={keyValid} placeholder="C:\certs\client.key"
-                    onChange={(e: any) => { setKeyPath(e.target.value); handleInputChange(() => {}, null); }}
+                    onChange={(e: any) => setKeyPath(e.target.value)}
                     onBrowse={() => handleFileSelect(setKeyPath, 'Private Key', ['key', 'pem'])}
                   />
                 </div>
@@ -1176,12 +1178,11 @@ export function MqttPage() {
               </div>
               {(lwtTopic || lwtPayload || lwtQos !== 0 || lwtRetain) && (
                 <button 
-                  onClick={() => { 
-                    setLwtTopic(""); 
-                    setLwtPayload(""); 
-                    setLwtQos(0); 
-                    setLwtRetain(false); 
-                    handleInputChange(() => {}, null); 
+                  onClick={() => {
+                    setLwtTopic("");
+                    setLwtPayload("");
+                    setLwtQos(0);
+                    setLwtRetain(false);
                   }} 
                   className="text-xs text-red-500 hover:text-red-700 underline font-bold"
                 >
@@ -1199,7 +1200,7 @@ export function MqttPage() {
                 <label className="text-xs font-bold uppercase text-slate-500">{t('mqtt_lwt_topic')}</label>
                 <input 
                   value={lwtTopic} 
-                  onChange={e => {setLwtTopic(e.target.value); handleInputChange(() => {}, null);}} 
+                  onChange={e => setLwtTopic(e.target.value)} 
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm font-mono outline-none focus:border-purple-500" 
                   placeholder={t('mqtt_ph_lwt_topic')} 
                 />
@@ -1209,7 +1210,7 @@ export function MqttPage() {
                 <label className="text-xs font-bold uppercase text-slate-500">{t('mqtt_lwt_payload')}</label>
                 <input 
                   value={lwtPayload} 
-                  onChange={e => {setLwtPayload(e.target.value); handleInputChange(() => {}, null);}} 
+                  onChange={e => setLwtPayload(e.target.value)} 
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm font-mono outline-none focus:border-purple-500" 
                   placeholder={t('mqtt_ph_lwt_payload')} 
                 />
@@ -1218,14 +1219,14 @@ export function MqttPage() {
               <div className="flex gap-4 mt-1">
                 <div className="flex flex-col gap-1 flex-1">
                   <label className="text-xs font-bold uppercase text-slate-500">{t('mqtt_qos_label')}</label>
-                  <select value={lwtQos} onChange={e => {setLwtQos(Number(e.target.value)); handleInputChange(() => {}, null);}} className="w-full px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm outline-none">
+                  <select value={lwtQos} onChange={e => setLwtQos(Number(e.target.value))} className="w-full px-2 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm outline-none">
                     <option value={0}>0 - At Most Once</option>
                     <option value={1}>1 - At Least Once</option>
                     <option value={2}>2 - Exactly Once</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-1 justify-end pb-2">
-                  <div className="flex items-center gap-2 cursor-pointer" onClick={() => {setLwtRetain(!lwtRetain); handleInputChange(() => {}, null);}}>
+                  <div className="flex items-center gap-2 cursor-pointer" onClick={() => setLwtRetain(!lwtRetain)}>
                     <div className={`w-4 h-4 rounded border flex items-center justify-center ${lwtRetain ? "bg-purple-600 border-purple-600" : "border-slate-400"}`}>
                       {lwtRetain && <Check size={12} className="text-white" strokeWidth={3}/>}
                     </div>

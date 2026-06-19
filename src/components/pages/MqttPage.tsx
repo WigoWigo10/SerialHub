@@ -900,7 +900,7 @@ export function MqttPage() {
         {/* COLUNA DIREITA: EXPLORER E GRÁFICOS */}
         <div className="flex-1 flex flex-col gap-4 min-w-0">
           <div
-            className={`flex flex-col bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm transition-all duration-300 ${
+            className={`flex flex-col bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm ${
               chartTopics.length > 0 ? "h-1/2" : "flex-1"
             }`}
           >

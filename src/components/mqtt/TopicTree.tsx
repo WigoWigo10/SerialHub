@@ -140,7 +140,7 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
     if (onToggleChart) onToggleChart(node.fullName);
   };
 
-  const isNumber = node.value && !isNaN(Number(node.value)) && !node.isJson;
+  const isNumber = node.value && !isNaN(Number(node.value));
   const showChartIcon = (isNumber || recordedTopics.includes(node.fullName)) && viewMode === 'ASCII';
   const isActive = recordedTopics.includes(node.fullName);
 

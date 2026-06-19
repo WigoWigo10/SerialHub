@@ -541,8 +541,9 @@ export function MqttPage() {
       // --- TIMER DE SEGURANÇA ---
       setTimeout(() => {
         if (isConnectingRef.current === true) {
-            toast.error(t('mqtt_err_timeout'), { id: toastIdRef.current });
-            setIsConnecting(false);
+          toast.error(t('mqtt_err_timeout'), { id: toastIdRef.current });
+          toastIdRef.current = undefined;
+          setIsConnecting(false);
         }
       }, 5000);
 

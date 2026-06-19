@@ -203,7 +203,6 @@ export function MqttPage() {
     setLwtPayload(lwtBackupRef.current.payload);
     setLwtQos(lwtBackupRef.current.qos);
     setLwtRetain(lwtBackupRef.current.retain);
-    handleInputChange(() => {}, null);
     setIsLwtModalOpen(false);
   };
 
@@ -315,9 +314,6 @@ export function MqttPage() {
     setCaPath(securityBackupRef.current.ca);
     setCertPath(securityBackupRef.current.cert);
     setKeyPath(securityBackupRef.current.key);
-
-    handleInputChange(() => {}, null);
-
     setIsSecurityModalOpen(false);
   };
 

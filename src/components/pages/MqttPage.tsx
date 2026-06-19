@@ -405,21 +405,44 @@ export function MqttPage() {
       setMessages((prev) => [...prev, newMsg]);
 
       setChartHistory((prevHistory) => {
-        const isMonitored = prevHistory[topic] !== undefined;
-        if (isMonitored) {
+        const newHistory = { ...prevHistory };
+        let changed = false;
+
+        // Tópico MQTT direto
+        if (prevHistory[topic] !== undefined) {
           const val = parseFloat(event.payload.payload);
           if (!isNaN(val)) {
-            const oldHistory = prevHistory[topic] || [];
-            const newPoint = {
-              time: timeStr,
-              value: val,
-              originalTime: now.getTime(),
-            };
-            const newHistory = [...oldHistory, newPoint].slice(-100);
-            return { ...prevHistory, [topic]: newHistory };
+            newHistory[topic] = [...(prevHistory[topic] || []), {
+              time: timeStr, value: val, originalTime: now.getTime(),
+            }].slice(-100);
+            changed = true;
           }
         }
-        return prevHistory;
+
+        // Campos JSON: chaves no formato "topico/mqtt.campo.aninhado"
+        const jsonPrefix = `${topic}.`;
+        Object.keys(prevHistory).forEach(key => {
+          if (!key.startsWith(jsonPrefix)) return;
+          const fieldPath = key.slice(jsonPrefix.length);
+          try {
+            const json = JSON.parse(event.payload.payload);
+            const parts = fieldPath.split('.');
+            let fieldVal: any = json;
+            for (const part of parts) {
+              if (fieldVal == null || typeof fieldVal !== 'object') { fieldVal = undefined; break; }
+              fieldVal = fieldVal[part];
+            }
+            const numVal = parseFloat(String(fieldVal));
+            if (fieldVal !== undefined && !isNaN(numVal)) {
+              newHistory[key] = [...(prevHistory[key] || []), {
+                time: timeStr, value: numVal, originalTime: now.getTime(),
+              }].slice(-100);
+              changed = true;
+            }
+          } catch { /* payload não é JSON válido */ }
+        });
+
+        return changed ? newHistory : prevHistory;
       });
     });
     unlistenPromises.push(pMsg);
@@ -578,21 +601,41 @@ export function MqttPage() {
   const handleAddToChart = (topic: string) => {
     if (chartTopics.includes(topic))
       return toast(t('mqtt_warn_already_chart'), { icon: "📊" });
-      
+
     if (chartTopics.length >= 3) return toast.error(t('mqtt_warn_max_charts'));
-    
+
     setChartTopics((prev) => [...prev, topic]);
     setChartHistory((prev) => {
       if (prev[topic] && prev[topic].length > 0) return prev;
-      const lastMsg = [...messages].reverse().find((m) => m.topic === topic);
+
       let initialData: ChartDataPoint[] = [];
-      if (lastMsg) {
-        const val = parseFloat(lastMsg.payload);
+
+      // Tópico MQTT direto
+      const lastDirectMsg = [...messages].reverse().find((m) => m.topic === topic);
+      if (lastDirectMsg) {
+        const val = parseFloat(lastDirectMsg.payload);
         if (!isNaN(val))
-          initialData = [
-            { time: lastMsg.timestamp, value: val, originalTime: Date.now() },
-          ];
+          initialData = [{ time: lastDirectMsg.timestamp, value: val, originalTime: Date.now() }];
+      } else {
+        // Campo JSON: busca a mensagem pai cujo tópico é prefixo de "topic."
+        const parentMsg = [...messages].reverse().find((m) => topic.startsWith(`${m.topic}.`));
+        if (parentMsg) {
+          const fieldPath = topic.slice(parentMsg.topic.length + 1);
+          try {
+            const json = JSON.parse(parentMsg.payload);
+            const parts = fieldPath.split('.');
+            let fieldVal: any = json;
+            for (const part of parts) {
+              if (fieldVal == null || typeof fieldVal !== 'object') { fieldVal = undefined; break; }
+              fieldVal = fieldVal[part];
+            }
+            const numVal = parseFloat(String(fieldVal));
+            if (fieldVal !== undefined && !isNaN(numVal))
+              initialData = [{ time: parentMsg.timestamp, value: numVal, originalTime: Date.now() }];
+          } catch { /* payload inválido */ }
+        }
       }
+
       return { ...prev, [topic]: initialData };
     });
     toast.success(`${t('mqtt_msg_chart_added')}${topic}`, { icon: "📈" });
@@ -857,7 +900,7 @@ export function MqttPage() {
         {/* COLUNA DIREITA: EXPLORER E GRÁFICOS */}
         <div className="flex-1 flex flex-col gap-4 min-w-0">
           <div
-            className={`flex flex-col bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm transition-all duration-300 ${
+            className={`flex flex-col bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm ${
               chartTopics.length > 0 ? "h-1/2" : "flex-1"
             }`}
           >
@@ -912,7 +955,7 @@ export function MqttPage() {
               <TopicTree
                 messages={messages}
                 onToggleChart={handleToggleChart}
-                recordedTopics={Object.keys(chartHistory)}
+                recordedTopics={chartTopics}
                 viewMode={viewMode}
               />
             </div>

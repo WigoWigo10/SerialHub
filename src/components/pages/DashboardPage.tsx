@@ -1,13 +1,17 @@
 ﻿import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { 
+import {
   Cpu, MemoryStick, AlertTriangle, CheckCircle2, LayoutDashboard,
   Layers, Zap, MonitorPlay, BrainCircuit, Battery, BatteryCharging, Plug, Bluetooth, Globe,
   ArrowUpCircle, ArrowDownCircle, Activity, History
 } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
+import { useDashboardValue } from "../../hooks/useDashboardValue";
+import { useDisplayRefreshRate } from "../../hooks/useDisplayRefreshRate";
+import { DashboardRefreshRate, effectiveRefreshRate } from "../../lib/dashboardRefresh";
+import type { LanguageKey } from "../../i18n/translations";
 
 interface SystemStats {
   cpu_load: number;
@@ -19,6 +23,7 @@ interface SystemStats {
   cores_phys: number;
   cores_log: number;
   gpu_name: string;
+  gpus?: { name: string; kind: "integrated" | "dedicated" | "unknown" }[];
   ram_details: string;
   ram_speed: number;
   npu_name: string;
@@ -29,8 +34,96 @@ interface SystemStats {
   bt_detected: boolean;
 }
 
+function CpuLoadChart({ load, history, rate, caption }: { load: number; history: number[]; rate: DashboardRefreshRate; caption: string }) {
+  const animatedLoad = useDashboardValue(load, rate);
+  const displayHistory = useMemo(() => [...history.slice(0, -1), animatedLoad], [history, animatedLoad]);
+  const graphPath = useMemo(() => {
+    const max = 100;
+    const width = 100;
+    const height = 40;
+    const step = width / (displayHistory.length - 1);
+    const points = displayHistory.map((val, i) => `${i * step},${height - (val / max) * height}`).join(" ");
+    return {
+        line: `M ${points}`,
+        fill: `M ${points} L 100,40 L 0,40 Z`
+    };
+  }, [displayHistory]);
+
+  return (
+    <div className="bg-white dark:bg-slate-900 p-0 rounded-lg border border-slate-200 dark:border-slate-800 col-span-2 overflow-hidden relative flex flex-col justify-between">
+       <div className="absolute top-3 left-3 z-10">
+           <span className="text-[10px] text-slate-400 uppercase font-bold">{caption}</span>
+       </div>
+       <div className="absolute top-2 right-3 z-10">
+           <span className={`text-xl font-mono font-bold ${animatedLoad > 80 ? 'text-red-500' : 'text-emerald-500'}`}>
+               {animatedLoad.toFixed(1)}%
+           </span>
+       </div>
+       <div className="w-full h-16 mt-auto">
+           <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="w-full h-full">
+               <defs>
+                   <linearGradient id="cpuGradient" x1="0" x2="0" y1="0" y2="1">
+                       <stop offset="0%" stopColor="rgb(16, 185, 129)" stopOpacity="0.4" />
+                       <stop offset="100%" stopColor="rgb(16, 185, 129)" stopOpacity="0" />
+                   </linearGradient>
+               </defs>
+               <path d={graphPath.fill} fill="url(#cpuGradient)" />
+               <path d={graphPath.line} fill="none" stroke="rgb(16, 185, 129)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+           </svg>
+       </div>
+    </div>
+  );
+}
+
+function MemoryCard({ stats, rate, t }: { stats: SystemStats; rate: DashboardRefreshRate; t: (key: LanguageKey) => string }) {
+  const animatedUsed = useDashboardValue(stats.mem_used, rate);
+  const memPercent = stats.mem_total > 0 ? (animatedUsed / stats.mem_total) * 100 : 0;
+  const formatBytes = (bytes: number) => {
+    const gb = bytes / (1024 * 1024 * 1024);
+    return `${gb.toFixed(1)} GB`;
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 h-[160px] flex flex-col justify-center">
+        <div className="flex justify-between items-start mb-4">
+            <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-100 dark:bg-yellow-500/10 rounded-lg text-yellow-600 dark:text-yellow-500">
+                    <Zap size={20} />
+                </div>
+                <div>
+                    <h3 className="font-bold text-sm">{stats.ram_details}</h3>
+                    <p className="text-xs text-slate-500 font-mono">{stats.ram_speed} MT/s</p>
+                </div>
+            </div>
+            <div className="text-right">
+                <div className="text-xl font-mono font-bold">{memPercent.toFixed(0)}%</div>
+                <div className="text-[10px] text-slate-400 uppercase">{t('dash_ram_in_use')}</div>
+            </div>
+        </div>
+        <div className="space-y-2">
+            <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div
+                    className={`h-full ${
+                        memPercent > 85 ? 'bg-red-500' :
+                        memPercent > 60 ? 'bg-orange-500' : 'bg-yellow-500'
+                    }`}
+                    style={{ width: `${Math.min(100, Math.max(0, memPercent))}%` }}
+                    />
+                </div>
+            <div className="flex justify-between text-xs font-mono text-slate-500">
+                <span>{t('dash_ram_used')}: {formatBytes(animatedUsed)}</span>
+                <span>{t('dash_ram_total')}: {formatBytes(stats.mem_total)}</span>
+            </div>
+        </div>
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const { t } = useLanguage();
+  const displayHz = useDisplayRefreshRate();
+  const refreshPreference = useSettingsStore(state => state.dashboardRefreshRate);
+  const dashboardRefreshRate = effectiveRefreshRate(refreshPreference, displayHz);
   
   const { 
     connected, 
@@ -60,7 +153,7 @@ export function DashboardPage() {
     net_name: "Buscando...", bt_detected: false
   });
 
-  const [cpuHistory, setCpuHistory] = useState<number[]>(new Array(30).fill(0));
+  const [cpuHistory, setCpuHistory] = useState<number[]>(new Array(120).fill(0));
   const [durationStr, setDurationStr] = useState("00:00:00");
 
   useEffect(() => {
@@ -69,7 +162,7 @@ export function DashboardPage() {
       setStats(newStats);
       setCpuHistory(prev => {
         const newHistory = [...prev, newStats.cpu_load];
-        if (newHistory.length > 30) newHistory.shift();
+        if (newHistory.length > 120) newHistory.shift();
         return newHistory;
       });
     });
@@ -115,23 +208,6 @@ export function DashboardPage() {
     return `${(bytes / 1048576).toFixed(2)} MB`;
   };
 
-  const graphPath = useMemo(() => {
-    const max = 100;
-    const width = 100; 
-    const height = 40; 
-    const step = width / (cpuHistory.length - 1);
-    const points = cpuHistory.map((val, i) => `${i * step},${height - (val / max) * height}`).join(" ");
-    return {
-        line: `M ${points}`,
-        fill: `M ${points} L 100,40 L 0,40 Z` 
-    };
-  }, [cpuHistory]);
-
-  const formatBytes = (bytes: number) => {
-    const gb = bytes / (1024 * 1024 * 1024);
-    return `${gb.toFixed(1)} GB`;
-  };
-
   //const getLoadColor = (value: number) => {
     //if (value > 80) return "text-red-500";
     //if (value > 50) return "text-yellow-500";
@@ -144,14 +220,16 @@ export function DashboardPage() {
       return "text-emerald-500 bg-emerald-100 dark:bg-emerald-900/20";
   };
 
-  const memPercent = stats.mem_total > 0 ? (stats.mem_used / stats.mem_total) * 100 : 0;
+  const gpus = stats.gpus ?? (stats.gpu_name && stats.gpu_name !== "-"
+    ? [{ name: stats.gpu_name, kind: "unknown" as const }] : []);
+  const hasNpu = !["", "none", "unknown", "-"].includes(stats.npu_name.trim().toLowerCase());
 
   return (
     <div className="flex-1 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 h-full overflow-y-auto animate-in fade-in zoom-in-95 duration-200 transition-colors duration-300">
       
       <div className="max-w-6xl mx-auto p-8 space-y-8">
         
-        <div className="flex items-center justify-between pb-6 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
             <div>
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-3">
                     <LayoutDashboard className="text-blue-500" size={32} />
@@ -198,28 +276,7 @@ export function DashboardPage() {
                             <Layers size={16} className="text-blue-500" /> {stats.cores_log}
                         </div>
                      </div>
-                     <div className="bg-white dark:bg-slate-900 p-0 rounded-lg border border-slate-200 dark:border-slate-800 col-span-2 overflow-hidden relative flex flex-col justify-between">
-                        <div className="absolute top-3 left-3 z-10">
-                            <span className="text-[10px] text-slate-400 uppercase font-bold">{t('dash_realtime_load')}</span>
-                        </div>
-                        <div className="absolute top-2 right-3 z-10">
-                            <span className={`text-xl font-mono font-bold ${stats.cpu_load > 80 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                {stats.cpu_load.toFixed(1)}%
-                            </span>
-                        </div>
-                        <div className="w-full h-16 mt-auto">
-                            <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="w-full h-full">
-                                <defs>
-                                    <linearGradient id="cpuGradient" x1="0" x2="0" y1="0" y2="1">
-                                        <stop offset="0%" stopColor="rgb(16, 185, 129)" stopOpacity="0.4" />
-                                        <stop offset="100%" stopColor="rgb(16, 185, 129)" stopOpacity="0" />
-                                    </linearGradient>
-                                </defs>
-                                <path d={graphPath.fill} fill="url(#cpuGradient)" />
-                                <path d={graphPath.line} fill="none" stroke="rgb(16, 185, 129)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-                            </svg>
-                        </div>
-                     </div>
+                     <CpuLoadChart load={stats.cpu_load} history={cpuHistory} rate={dashboardRefreshRate} caption={t('dash_realtime_load')} />
                 </div>
             </div>
         </section>
@@ -229,26 +286,31 @@ export function DashboardPage() {
                  <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                     <MonitorPlay size={16} /> {t('dash_graphics_ai')}
                 </div>
-                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4 h-[160px] flex flex-col justify-center">
-                    <div className="flex items-center gap-4">
-                        <div className="p-2.5 bg-orange-100 dark:bg-orange-500/10 rounded-lg text-orange-600 dark:text-orange-400">
+                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4 min-h-[160px] flex flex-col justify-center">
+                    {gpus.map((gpu, index) => (
+                    <div key={`${gpu.name}-${index}`} className="flex items-center gap-4">
+                        <div className="shrink-0 p-2.5 bg-orange-100 dark:bg-orange-500/10 rounded-lg text-orange-600 dark:text-orange-400">
                             <MonitorPlay size={20} />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <div className="text-xs text-slate-400 uppercase font-bold">{t('dash_gpu')} ({t('dash_graphics_ai')})</div>
-                            <div className="font-bold truncate text-sm" title={stats.gpu_name}>{stats.gpu_name}</div>
+                            <div className="text-xs text-slate-400 uppercase font-bold">{t(gpu.kind === "integrated" ? 'dash_gpu_integrated' : gpu.kind === "dedicated" ? 'dash_gpu_dedicated' : 'dash_gpu')}</div>
+                            <div className="font-bold break-words text-sm" title={gpu.name}>{gpu.name}</div>
                         </div>
                     </div>
+                    ))}
+                    {gpus.length === 0 && <p className="text-sm text-slate-500">{t('dash_gpu_not_found')}</p>}
+                    {hasNpu && <>
                     <div className="h-px bg-slate-100 dark:bg-slate-800" />
                     <div className="flex items-center gap-4">
-                        <div className={`p-2.5 rounded-lg ${stats.npu_name !== "None" ? "bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400"}`}>
+                        <div className="shrink-0 p-2.5 rounded-lg bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400">
                             <BrainCircuit size={20} />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <div className="text-xs text-slate-400 uppercase font-bold">{t('dash_npu')} (Neural Processor)</div>
-                            <div className="font-bold truncate text-sm">{stats.npu_name !== "None" ? stats.npu_name : t('dash_npu_not_found')}</div>
+                            <div className="text-xs text-slate-400 uppercase font-bold">{t('dash_npu')}</div>
+                            <div className="font-bold break-words text-sm">{stats.npu_name}</div>
                         </div>
                     </div>
+                    </>}
                 </div>
             </div>
 
@@ -256,38 +318,7 @@ export function DashboardPage() {
                 <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                     <MemoryStick size={16} /> {t('dash_memory')}
                 </div>
-                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 h-[160px] flex flex-col justify-center">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-yellow-100 dark:bg-yellow-500/10 rounded-lg text-yellow-600 dark:text-yellow-500">
-                                <Zap size={20} />
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-sm">{stats.ram_details}</h3>
-                                <p className="text-xs text-slate-500 font-mono">{stats.ram_speed} MT/s</p>
-                            </div>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-xl font-mono font-bold">{memPercent.toFixed(0)}%</div>
-                            <div className="text-[10px] text-slate-400 uppercase">{t('dash_ram_in_use')}</div>
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                            <div 
-                                className={`h-full transition-all duration-500 ease-out ${
-                                    memPercent > 85 ? 'bg-red-500' : 
-                                    memPercent > 60 ? 'bg-orange-500' : 'bg-yellow-500'
-                                }`} 
-                                style={{ width: `${memPercent}%` }}
-                                />
-                            </div>
-                        <div className="flex justify-between text-xs font-mono text-slate-500">
-                            <span>{t('dash_ram_used')}: {formatBytes(stats.mem_used)}</span>
-                            <span>{t('dash_ram_total')}: {formatBytes(stats.mem_total)}</span>
-                        </div>
-                    </div>
-                </div>
+                <MemoryCard stats={stats} rate={dashboardRefreshRate} t={t} />
             </div>
         </section>
 
@@ -324,12 +355,12 @@ export function DashboardPage() {
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-center space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
+                    <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-3 shrink-0">
                             <Globe size={18} className="text-blue-500" />
                             <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{t('dash_network')}</span>
                         </div>
-                        <span className="text-xs font-mono text-slate-500 truncate max-w-[150px]">{stats.net_name}</span>
+                        <span className="text-xs font-mono text-slate-500 break-words" title={stats.net_name}>{stats.net_name}</span>
                     </div>
                     <div className="h-px bg-slate-100 dark:bg-slate-800" />
                     <div className="flex items-center justify-between">

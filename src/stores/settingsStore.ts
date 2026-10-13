@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { transitionTheme } from '../lib/themeTransition';
+import type { DashboardRefreshRate } from '../lib/dashboardRefresh';
+import type { SerialConnectionState } from '../lib/serialConnection';
 
 export type ActivityMode = 'SERIAL' | 'SETTINGS' | 'DASHBOARD' | 'monitor' | 'BLUETOOTH' | 'SPY' | 'MQTT';
 
@@ -10,8 +12,14 @@ interface SettingsState {
   localEcho: boolean;
   showTimestamp: boolean;
   language: 'pt-BR' | 'en-US' | 'es';
+  dashboardRefreshRate: DashboardRefreshRate;
+  setDashboardRefreshRate: (rate: DashboardRefreshRate) => void;
 
   connected: boolean;
+  serialRevision: number;
+  serialSessionId: number;
+  serialError: string | null;
+  applySerialConnection: (snapshot: SerialConnectionState) => void;
   activePort: string | null;
   connectionStartTime: number | null;
   isRecording: boolean;
@@ -49,8 +57,29 @@ export const useSettingsStore = create<SettingsState>()(
       localEcho: false,
       showTimestamp: false,
       language: 'pt-BR',
+      dashboardRefreshRate: 'auto',
+      setDashboardRefreshRate: (dashboardRefreshRate) => set({ dashboardRefreshRate }),
 
       connected: false,
+      serialRevision: -1,
+      serialSessionId: 0,
+      serialError: null,
+      applySerialConnection: (snapshot) => set(state => {
+        if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0
+          || !Number.isSafeInteger(snapshot.session_id) || snapshot.session_id < 0
+          || snapshot.revision <= state.serialRevision) return state;
+        const newSession = snapshot.connected && snapshot.session_id !== state.serialSessionId;
+        const disconnected = !snapshot.connected && state.connected;
+        return {
+          serialRevision: snapshot.revision,
+          serialSessionId: snapshot.session_id,
+          serialError: snapshot.error,
+          connected: snapshot.connected,
+          activePort: snapshot.connected ? snapshot.port_name : null,
+          connectionStartTime: snapshot.connected ? (newSession ? Date.now() : state.connectionStartTime) : null,
+          ...((newSession || disconnected) ? { txBytes: 0, rxBytes: 0 } : {}),
+        };
+      }),
       activePort: null,
       connectionStartTime: null,
       isRecording: false,
@@ -93,6 +122,7 @@ export const useSettingsStore = create<SettingsState>()(
         localEcho: state.localEcho,
         showTimestamp: state.showTimestamp,
         language: state.language,
+        dashboardRefreshRate: state.dashboardRefreshRate,
         isSidebarOpen: state.isSidebarOpen
       }),
     }

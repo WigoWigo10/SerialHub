@@ -1,0 +1,18 @@
+test_com3_rejection_occurs_before_inventory_or_open (test_serial_integration.HarnessTests.test_com3_rejection_occurs_before_inventory_or_open) ... ok
+test_com3_same_port_and_invalid_names_are_rejected (test_serial_integration.HarnessTests.test_com3_same_port_and_invalid_names_are_rejected) ... ok
+test_duration_runner_waits_for_ready_then_captures_raw_payload (test_serial_integration.HarnessTests.test_duration_runner_waits_for_ready_then_captures_raw_payload) ... ok
+test_exact_bytes_exit_and_stderr_are_checked (test_serial_integration.HarnessTests.test_exact_bytes_exit_and_stderr_are_checked) ... ok
+test_failed_start_does_not_send_payload (test_serial_integration.HarnessTests.test_failed_start_does_not_send_payload) ... ok
+test_monitor_captures_binary_files_and_checks_reopen_empty (test_serial_integration.HarnessTests.test_monitor_captures_binary_files_and_checks_reopen_empty) ... ok
+test_pair_requires_same_a_b_identifier (test_serial_integration.HarnessTests.test_pair_requires_same_a_b_identifier) ... ok
+test_partial_sender_writes_preserve_every_byte (test_serial_integration.HarnessTests.test_partial_sender_writes_preserve_every_byte) ... ok
+test_payload_contains_ascii_crlf_lf_nul_and_non_utf8 (test_serial_integration.HarnessTests.test_payload_contains_ascii_crlf_lf_nul_and_non_utf8) ... ok
+test_rejects_missing_disabled_or_ambiguous_endpoint (test_serial_integration.HarnessTests.test_rejects_missing_disabled_or_ambiguous_endpoint) ... ok
+test_rejects_physical_pnp_identity (test_serial_integration.HarnessTests.test_rejects_physical_pnp_identity) ... ok
+test_stalled_sender_fails (test_serial_integration.HarnessTests.test_stalled_sender_fails) ... ok
+test_windows_assigned_real_port_name (test_serial_integration.HarnessTests.test_windows_assigned_real_port_name) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.012s
+
+OK

@@ -15,6 +15,7 @@ import { useLanguage } from "./hooks/useLanguage";
 import { Toaster } from "react-hot-toast";
 import { Bluetooth, Bug, ChevronRight } from "lucide-react";
 import { useDataMonitor } from "./hooks/useDataMonitor";
+import { useSerialConnection } from "./hooks/useSerialConnection";
 import { MqttPage } from "./components/pages/MqttPage";
 
 const EmptyWorkspace = ({
@@ -47,6 +48,7 @@ function App() {
   );
   const { t } = useLanguage();
   useDataMonitor();
+  useSerialConnection();
 
   const [mqttInitialized, setMqttInitialized] = useState(false);
 

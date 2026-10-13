@@ -1,3 +1,4 @@
+use crate::serial_session::{spawn_reader, transient_error, ConnectionSnapshot, SessionFailure};
 use crate::SerialState;
 use serialhub_core::{
     DataBits, FlowControl, Parity, SerialConfig, SerialConnection, SerialPortInfo, StopBits,
@@ -27,7 +28,9 @@ pub fn open_port(
     state: State<'_, SerialState>,
 ) -> Result<String, String> {
     let mut session = state.session.lock().map_err(|_| "Lock fail")?;
-    session.stop()?;
+    let stopped = session.stop();
+    let _ = app.emit("serial-connection-state", session.snapshot());
+    stopped?;
 
     println!("Conectando a {}...", port_name);
     let config = gui_config(
@@ -40,56 +43,39 @@ pub fn open_port(
     );
     let mut port = SerialConnection::open(&config).map_err(|e| format!("Falha ao abrir: {}", e))?;
     let _ = port.clear_input();
-    let mut port_clone = port.try_clone().map_err(|e| e.to_string())?;
+    let port_clone = port.try_clone().map_err(|e| e.to_string())?;
     // Preserve the existing best-effort suppression of DTR/RTS on connect.
     let _ = port.set_dtr(false);
     let _ = port.set_rts(false);
-    let keep_running = session.start(port)?;
+    let keep_running = session.start(port, port_name.clone())?;
     let log_file_arc = state.log_file.clone();
-    let port_name_clone = port_name.clone();
-
-    let worker = thread::Builder::new()
-        .name("serial-reader".into())
-        .spawn(move || {
-            let mut serial_buf = vec![0; 1024];
-            println!("Thread de leitura iniciada: {}", port_name_clone);
-            while keep_running.load(Ordering::Acquire) {
-                let result = port_clone.read(&mut serial_buf);
-                // A close/reopen may have been requested during the blocking read.
-                if !keep_running.load(Ordering::Acquire) {
-                    break;
-                }
-                match result {
-                    Ok(t) if t > 0 => {
-                        let data = &serial_buf[..t];
-                        if let Ok(mut lock) = log_file_arc.lock() {
-                            if let Some(file) = lock.as_mut() {
-                                let _ = file.write_all(data);
-                                let _ = file.flush();
-                            }
-                        }
-                        if app.emit("serial-data", data).is_err() {
-                            break;
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                    Err(e) => {
-                        eprintln!("Erro fatal ({}): {:?}", port_name_clone, e);
-                        let _ = app.emit("connection-lost", e.to_string());
-                        break;
-                    }
+    let reader_app = app.clone();
+    let worker = spawn_reader(
+        port_clone,
+        keep_running,
+        state.failures.clone(),
+        move |data| {
+            if let Ok(mut lock) = log_file_arc.lock() {
+                if let Some(file) = lock.as_mut() {
+                    let _ = file.write_all(data);
+                    let _ = file.flush();
                 }
             }
-            keep_running.store(false, Ordering::Release);
-        });
+            reader_app
+                .emit("serial-data", data)
+                .map_err(|error| error.to_string())
+        },
+    );
     match worker {
         Ok(worker) => session.workers.push(worker),
         Err(error) => {
-            session.stop()?;
+            let stopped = session.stop();
+            let _ = app.emit("serial-connection-state", session.snapshot());
+            stopped?;
             return Err(format!("Falha ao iniciar leitura: {}", error));
         }
     }
+    let _ = app.emit("serial-connection-state", session.snapshot());
     Ok(format!("Conectado a {}", port_name))
 }
 
@@ -128,11 +114,21 @@ fn gui_config(
 }
 
 #[command]
-pub fn close_port(state: State<'_, SerialState>) -> Result<String, String> {
-    state.session.lock().map_err(|_| "Lock fail")?.stop()?;
+pub fn close_port(app: AppHandle, state: State<'_, SerialState>) -> Result<String, String> {
+    let mut session = state.session.lock().map_err(|_| "Lock fail")?;
+    let stopped = session.stop();
+    let _ = app.emit("serial-connection-state", session.snapshot());
+    stopped?;
 
     println!("Desconectado.");
     Ok("Desconectado.".to_string())
+}
+
+#[command]
+pub fn serial_connection_state(
+    state: State<'_, SerialState>,
+) -> Result<ConnectionSnapshot, String> {
+    Ok(state.session.lock().map_err(|_| "Lock fail")?.snapshot())
 }
 
 #[command]
@@ -167,7 +163,15 @@ pub fn write_serial(
 
                 Ok(size)
             }
-            Err(e) => Err(format!("Erro escrita: {}", e)),
+            Err(e) => {
+                if !transient_error(&e) {
+                    let _ = state.failures.send(SessionFailure::Fatal {
+                        running: port_guard.running.clone(),
+                        error: e.to_string(),
+                    });
+                }
+                Err(format!("Erro escrita: {}", e))
+            }
         }
     } else {
         Err("Porta fechada".to_string())
@@ -244,7 +248,7 @@ pub fn start_spy_bridge(
     let mut port_b_write = port_b.try_clone().map_err(|e| e.to_string())?;
     let mut port_b_read = port_b.try_clone().map_err(|e| e.to_string())?;
     let mut port_a_write = port_a.try_clone().map_err(|e| e.to_string())?;
-    let keep_running = session.start(port_a)?;
+    let keep_running = session.start(port_a, config_a.port_name.clone())?;
 
     let app_handle1 = app.clone();
     let keep_running1 = keep_running.clone();

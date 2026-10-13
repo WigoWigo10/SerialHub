@@ -8,7 +8,6 @@ export interface MqttProfile {
   port: number;
   clientId: string;
   username?: string;
-  password?: string;
   savedTopics?: string[]; 
   
   // Segurança (mTLS)
@@ -32,23 +31,52 @@ interface MqttStoreState {
   updateProfile: (id: string, updates: Partial<MqttProfile>) => void;
 }
 
+// Also discard passwords supplied by legacy callers or stored profiles.
+const withoutPassword = (profile: MqttProfile): MqttProfile => {
+  const { password: _password, ...settings } = profile as MqttProfile & { password?: unknown };
+  return settings;
+};
+
 export const useMqttStore = create<MqttStoreState>()(
   persist(
     (set) => ({
       profiles: [],
       addProfile: (profile) => set((state) => ({
-        profiles: [...state.profiles, { ...profile, id: crypto.randomUUID() }]
+        profiles: [...state.profiles, withoutPassword({ ...profile, id: crypto.randomUUID() })]
       })),
       removeProfile: (id) => set((state) => ({
         profiles: state.profiles.filter((p) => p.id !== id)
       })),
       updateProfile: (id, updates) => set((state) => ({
-        profiles: state.profiles.map((p) => p.id === id ? { ...p, ...updates } : p)
+        profiles: state.profiles.map((p) => p.id === id ? withoutPassword({ ...p, ...updates }) : p)
       })),
     }),
     {
       name: 'serialhub-mqtt-profiles', 
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        const storage = localStorage;
+        return {
+          getItem: (name) => {
+            const raw = storage.getItem(name);
+            if (raw === null) return null;
+            const stored = JSON.parse(raw);
+            // Rewrite old JSON immediately, even before any profile is edited.
+            // Keep the envelope and every other profile field intact.
+            if (Array.isArray(stored?.state?.profiles) && stored.state.profiles.some(
+              (profile: MqttProfile) => Object.prototype.hasOwnProperty.call(profile, 'password')
+            )) {
+              stored.state.profiles = stored.state.profiles.map(withoutPassword);
+              const cleaned = JSON.stringify(stored);
+              storage.setItem(name, cleaned);
+              return cleaned;
+            }
+            return raw;
+          },
+          setItem: (name, value) => storage.setItem(name, value),
+          removeItem: (name) => storage.removeItem(name),
+        };
+      }),
+      partialize: (state) => ({ profiles: state.profiles.map(withoutPassword) }),
     }
   )
 );

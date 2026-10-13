@@ -204,7 +204,7 @@ pub async fn connect_mqtt(
     }
 
     if let (Some(u), Some(p)) = (username, password) {
-        println!("[MQTT-DEBUG] Usando Credenciais: User='{}', Pass='***'", u);
+        println!("[MQTT-DEBUG] Autenticação por usuário/senha habilitada.");
         mqttoptions.set_credentials(u, p);
     } else {
         println!("[MQTT-DEBUG] Conexão Anônima (Sem usuário/senha).");

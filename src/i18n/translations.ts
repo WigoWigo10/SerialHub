@@ -263,7 +263,7 @@ export const translations = {
 
     mqtt_save_ph: "Ex: Broker Local",
     mqtt_save_will_save: "Salvará:",
-    mqtt_save_creds: "(e credenciais)",
+    mqtt_save_creds: "(e usuário; senha somente em memória — informe-a novamente ao carregar o perfil)",
 
     mqtt_ph_lwt_topic: "status/serialhub/offline",
     mqtt_ph_lwt_payload: "Desconectado",
@@ -539,7 +539,7 @@ export const translations = {
 
     mqtt_save_ph: "Ex: Local Broker",
     mqtt_save_will_save: "Will save:",
-    mqtt_save_creds: "(and credentials)",
+    mqtt_save_creds: "(and username; password stays in memory — enter it again when loading the profile)",
 
     mqtt_ph_lwt_topic: "status/serialhub/offline",
     mqtt_ph_lwt_payload: "Disconnected",
@@ -809,7 +809,7 @@ export const translations = {
 
     mqtt_save_ph: "Ej: Broker Local",
     mqtt_save_will_save: "Guardará:",
-    mqtt_save_creds: "(y credenciales)",
+    mqtt_save_creds: "(y usuario; contraseña solo en memoria — introdúcela de nuevo al cargar el perfil)",
 
     mqtt_ph_lwt_topic: "status/serialhub/offline",
     mqtt_ph_lwt_payload: "Desconectado",

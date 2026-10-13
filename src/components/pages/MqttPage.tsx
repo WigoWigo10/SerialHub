@@ -288,7 +288,7 @@ export function MqttPage() {
     console.log("[SEC-DEBUG] Salvando perfil com configurações TLS:", { ca: caPath, cert: certPath, key: keyPath });
     
     addProfile({ 
-      name: tempProfileName, broker, port, clientId, username, password, 
+      name: tempProfileName, broker, port, clientId, username,
       savedTopics: activeSubs,
       caFilePath: caPath, certFilePath: certPath, keyFilePath: keyPath,
       lwtTopic, lwtPayload, lwtQos, lwtRetain,
@@ -341,7 +341,8 @@ export function MqttPage() {
 
   const handleLoadProfile = async (p: MqttProfile) => {
     setBroker(p.broker); setPort(p.port); setClientId(p.clientId);
-    setUsername(p.username || ""); setPassword(p.password || "");
+    setUsername(p.username || ""); setPassword("");
+    setShowPassword(false);
     
     setCaPath(p.caFilePath || ""); 
     setCertPath(p.certFilePath || ""); 
@@ -563,7 +564,6 @@ export function MqttPage() {
         useWebsockets: useWebsockets
       };
 
-      console.log("[FRONT-DEBUG] Tentando conectar > Params:", connectionParams);
       
       // --- TIMER DE SEGURANÇA ---
       safetyTimeoutRef.current = setTimeout(() => {

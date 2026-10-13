@@ -102,7 +102,7 @@ const SecurityInput = ({
 
 export function MqttPage() {
   const { t } = useLanguage();
-  const { theme } = useSettingsStore();
+  const theme = useSettingsStore((state) => state.theme);
   // Store de Perfis
   const { profiles, addProfile, removeProfile } = useMqttStore();
   const [showProfiles, setShowProfiles] = useState(false);

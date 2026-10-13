@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { startThemeSync } from "./lib/theme";
 import { Sidebar } from "./components/layout/Sidebar";
 import { SpySidebar } from "./components/layout/SpySidebar";
 import { BluetoothSidebar } from "./components/layout/BluetoothSidebar";
@@ -36,7 +38,13 @@ const EmptyWorkspace = ({
 );
 
 function App() {
-  const { theme, activityMode, isSidebarOpen, setSidebarOpen } = useSettingsStore();
+  const { activityMode, isSidebarOpen, setSidebarOpen } = useSettingsStore(
+    useShallow((state) => ({
+      activityMode: state.activityMode,
+      isSidebarOpen: state.isSidebarOpen,
+      setSidebarOpen: state.setSidebarOpen,
+    })),
+  );
   const { t } = useLanguage();
   useDataMonitor();
 
@@ -48,12 +56,7 @@ function App() {
     }
   }, [activityMode, mqttInitialized]);
 
-  useEffect(() => {
-    const root = window.document.documentElement;
-    root.classList.remove("light", "dark");
-    root.classList.add(theme);
-    root.style.colorScheme = theme;
-  }, [theme]);
+  useLayoutEffect(startThemeSync, []);
 
   const isSerialMode = activityMode === "SERIAL" || activityMode === "monitor";
   const isSettingsMode = activityMode === "SETTINGS";

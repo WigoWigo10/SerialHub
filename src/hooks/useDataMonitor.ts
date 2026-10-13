@@ -3,7 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore } from "../stores/settingsStore";
 
 export function useDataMonitor() {
-  const { addRxBytes, addTxBytes } = useSettingsStore();
+  const addRxBytes = useSettingsStore((state) => state.addRxBytes);
+  const addTxBytes = useSettingsStore((state) => state.addTxBytes);
 
   useEffect(() => {
     const unlistenRx = listen<string>("serial-data", (event) => {
@@ -18,5 +19,5 @@ export function useDataMonitor() {
       unlistenRx.then((f) => f());
       unlistenTx.then((f) => f());
     };
-  }, []);
+  }, [addRxBytes, addTxBytes]);
 }

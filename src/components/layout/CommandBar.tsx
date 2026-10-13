@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -22,7 +23,12 @@ export function CommandBar() {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draft, setDraft] = useState("");
 
-  const { localEcho, toggleLocalEcho } = useSettingsStore();
+  const { localEcho, toggleLocalEcho } = useSettingsStore(
+    useShallow((state) => ({
+      localEcho: state.localEcho,
+      toggleLocalEcho: state.toggleLocalEcho,
+    })),
+  );
   const { t } = useLanguage();
 
   const [rxActive, setRxActive] = useState(false);

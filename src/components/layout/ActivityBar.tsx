@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import {
   Cable,
   Bluetooth,
@@ -10,7 +11,13 @@ import { useSettingsStore, ActivityMode } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
 
 export function ActivityBar() {
-  const { activityMode, setActivityMode, toggleSidebar } = useSettingsStore();
+  const { activityMode, setActivityMode, toggleSidebar } = useSettingsStore(
+    useShallow((state) => ({
+      activityMode: state.activityMode,
+      setActivityMode: state.setActivityMode,
+      toggleSidebar: state.toggleSidebar,
+    })),
+  );
   const { t } = useLanguage();
 
   const MODES_WITH_SIDEBAR: ActivityMode[] = ['SERIAL', 'monitor', 'SPY', 'BLUETOOTH'];

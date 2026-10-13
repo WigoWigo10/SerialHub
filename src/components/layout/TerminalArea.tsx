@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -42,7 +43,18 @@ export function TerminalArea() {
     theme,
     isSidebarOpen,
     setSidebarOpen,
-  } = useSettingsStore();
+  } = useSettingsStore(
+    useShallow((state) => ({
+      localEcho: state.localEcho,
+      viewMode: state.viewMode,
+      showTimestamp: state.showTimestamp,
+      activePort: state.activePort,
+      connected: state.connected,
+      theme: state.theme,
+      isSidebarOpen: state.isSidebarOpen,
+      setSidebarOpen: state.setSidebarOpen,
+    })),
+  );
 
   const handleClear = () => {
     if (xtermRef.current) {

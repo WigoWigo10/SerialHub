@@ -1,4 +1,5 @@
-﻿import { 
+﻿import { useShallow } from "zustand/react/shallow";
+import {
   Laptop, Moon, Sun, Globe, SlidersHorizontal, 
   Terminal, Info, CheckCircle2, Github, ExternalLink 
 } from "lucide-react";
@@ -10,7 +11,14 @@ export function SettingsPage() {
   const { 
     theme, setTheme, 
     language, setLanguage 
-  } = useSettingsStore();
+  } = useSettingsStore(
+    useShallow((state) => ({
+      theme: state.theme,
+      setTheme: state.setTheme,
+      language: state.language,
+      setLanguage: state.setLanguage,
+    })),
+  );
 
   const { t } = useLanguage();
 

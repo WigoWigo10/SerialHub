@@ -1,4 +1,5 @@
-﻿import { useEffect, useState, useMemo } from "react";
+﻿import { useShallow } from "zustand/react/shallow";
+import { useEffect, useState, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { 
   Cpu, MemoryStick, AlertTriangle, CheckCircle2, LayoutDashboard,
@@ -39,7 +40,17 @@ export function DashboardPage() {
     rxBytes,
     addRxBytes,
     addTxBytes
-  } = useSettingsStore();
+  } = useSettingsStore(
+    useShallow((state) => ({
+      connected: state.connected,
+      activePort: state.activePort,
+      connectionStartTime: state.connectionStartTime,
+      txBytes: state.txBytes,
+      rxBytes: state.rxBytes,
+      addRxBytes: state.addRxBytes,
+      addTxBytes: state.addTxBytes,
+    })),
+  );
   
   const [stats, setStats] = useState<SystemStats>({ 
     cpu_load: 0, mem_used: 0, mem_total: 0, cpu_freq: 0,

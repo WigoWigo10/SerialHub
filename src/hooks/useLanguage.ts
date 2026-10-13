@@ -3,7 +3,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { translations, LanguageKey } from "../i18n/translations";
 
 export function useLanguage() {
-  const { language } = useSettingsStore();
+  const language = useSettingsStore((state) => state.language);
 
   const t = useCallback((key: LanguageKey): string => {
     const currentLang = translations[language];

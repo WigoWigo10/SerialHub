@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -117,7 +118,19 @@ export function Sidebar() {
     setConnected,
     setActivePort,
     activePort,
-  } = useSettingsStore();
+  } = useSettingsStore(
+    useShallow((state) => ({
+      viewMode: state.viewMode,
+      setViewMode: state.setViewMode,
+      showTimestamp: state.showTimestamp,
+      toggleTimestamp: state.toggleTimestamp,
+      isRecording: state.isRecording,
+      setRecording: state.setRecording,
+      setConnected: state.setConnected,
+      setActivePort: state.setActivePort,
+      activePort: state.activePort,
+    })),
+  );
 
   const handleToggleRecord = async () => {
     if (isRecording) {

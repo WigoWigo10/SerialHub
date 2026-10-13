@@ -1,4 +1,5 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useShallow } from "zustand/react/shallow";
+import { useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Wifi, WifiOff, Circle } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -8,7 +9,13 @@ export function StatusBar() {
   const [version, setVersion] = useState("1.2.1");
   const [osName, setOsName] = useState("Unknown");
   
-  const { isRecording, connected, activePort } = useSettingsStore();
+  const { isRecording, connected, activePort } = useSettingsStore(
+    useShallow((state) => ({
+      isRecording: state.isRecording,
+      connected: state.connected,
+      activePort: state.activePort,
+    })),
+  );
   const { t } = useLanguage();
 
   useEffect(() => {

@@ -1,0 +1,15 @@
+[package]
+name = "serialhub-cli"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "SerialHub CLI for serial port enumeration and receive-only monitoring"
+
+[[bin]]
+name = "serialhub"
+path = "src/main.rs"
+
+[dependencies]
+serialhub-core = { path = "../serialhub-core" }
+serde_json = "1"
+ctrlc = "3.4"

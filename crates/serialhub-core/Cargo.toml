@@ -1,0 +1,13 @@
+[package]
+name = "serialhub-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Shared serial port enumeration for SerialHub"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serialport = "4.6.0"
+
+[dev-dependencies]
+serde_json = "1"

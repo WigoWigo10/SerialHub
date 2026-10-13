@@ -1,5 +1,7 @@
 use crate::SerialState;
-use serialport::{available_ports, DataBits, FlowControl, Parity, SerialPortType, StopBits};
+use serialhub_core::{
+    DataBits, FlowControl, Parity, SerialConfig, SerialConnection, SerialPortInfo, StopBits,
+};
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
@@ -8,53 +10,9 @@ use std::thread;
 use std::time::Duration;
 use tauri::{command, AppHandle, Emitter, State};
 
-#[derive(serde::Serialize)]
-pub struct SerialPortInfo {
-    port_name: String,
-    port_type: String,
-    vid: String,
-    pid: String,
-    manufacturer: String,
-    product: String,
-}
-
 #[command]
 pub fn list_ports() -> Result<Vec<SerialPortInfo>, String> {
-    match available_ports() {
-        Ok(ports) => {
-            let mut formatted_ports = Vec::new();
-            for p in ports {
-                let mut vid = "".to_string();
-                let mut pid = "".to_string();
-                let mut manuf = "".to_string();
-                let mut prod = "".to_string();
-
-                let p_type = match p.port_type {
-                    SerialPortType::UsbPort(info) => {
-                        vid = format!("{:04x}", info.vid);
-                        pid = format!("{:04x}", info.pid);
-                        manuf = info.manufacturer.unwrap_or_default();
-                        prod = info.product.unwrap_or_default();
-                        "USB".to_string()
-                    }
-                    SerialPortType::BluetoothPort => "Bluetooth".to_string(),
-                    SerialPortType::PciPort => "Native".to_string(),
-                    SerialPortType::Unknown => "Virtual".to_string(),
-                };
-
-                formatted_ports.push(SerialPortInfo {
-                    port_name: p.port_name,
-                    port_type: p_type,
-                    vid,
-                    pid,
-                    manufacturer: manuf,
-                    product: prod,
-                });
-            }
-            Ok(formatted_ports)
-        }
-        Err(e) => Err(format!("Erro: {}", e)),
-    }
+    serialhub_core::list_ports().map_err(|e| format!("Erro: {}", e))
 }
 
 #[command]
@@ -68,117 +26,110 @@ pub fn open_port(
     stop_bits: u8,
     state: State<'_, SerialState>,
 ) -> Result<String, String> {
-    state.running.store(false, Ordering::Relaxed);
-    
-    {
-        if let Ok(mut lock) = state.port.lock() {
-            *lock = None;
-        }
-    }
-
-    thread::sleep(Duration::from_millis(200)); 
+    let mut session = state.session.lock().map_err(|_| "Lock fail")?;
+    session.stop()?;
 
     println!("Conectando a {}...", port_name);
+    let config = gui_config(
+        port_name.clone(),
+        baud_rate,
+        data_bits,
+        &flow_control,
+        &parity,
+        stop_bits,
+    );
+    let mut port = SerialConnection::open(&config).map_err(|e| format!("Falha ao abrir: {}", e))?;
+    let _ = port.clear_input();
+    let mut port_clone = port.try_clone().map_err(|e| e.to_string())?;
+    // Preserve the existing best-effort suppression of DTR/RTS on connect.
+    let _ = port.set_dtr(false);
+    let _ = port.set_rts(false);
+    let keep_running = session.start(port)?;
+    let log_file_arc = state.log_file.clone();
+    let port_name_clone = port_name.clone();
 
-    let d_bits = match data_bits {
+    let worker = thread::Builder::new()
+        .name("serial-reader".into())
+        .spawn(move || {
+            let mut serial_buf = vec![0; 1024];
+            println!("Thread de leitura iniciada: {}", port_name_clone);
+            while keep_running.load(Ordering::Acquire) {
+                let result = port_clone.read(&mut serial_buf);
+                // A close/reopen may have been requested during the blocking read.
+                if !keep_running.load(Ordering::Acquire) {
+                    break;
+                }
+                match result {
+                    Ok(t) if t > 0 => {
+                        let data = &serial_buf[..t];
+                        if let Ok(mut lock) = log_file_arc.lock() {
+                            if let Some(file) = lock.as_mut() {
+                                let _ = file.write_all(data);
+                                let _ = file.flush();
+                            }
+                        }
+                        if app.emit("serial-data", data).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(e) => {
+                        eprintln!("Erro fatal ({}): {:?}", port_name_clone, e);
+                        let _ = app.emit("connection-lost", e.to_string());
+                        break;
+                    }
+                }
+            }
+            keep_running.store(false, Ordering::Release);
+        });
+    match worker {
+        Ok(worker) => session.workers.push(worker),
+        Err(error) => {
+            session.stop()?;
+            return Err(format!("Falha ao iniciar leitura: {}", error));
+        }
+    }
+    Ok(format!("Conectado a {}", port_name))
+}
+
+// Keep the GUI's previous fallback rules at the presentation boundary.
+fn gui_config(
+    port_name: String,
+    baud_rate: u32,
+    data_bits: u8,
+    flow_control: &str,
+    parity: &str,
+    stop_bits: u8,
+) -> SerialConfig {
+    let mut config = SerialConfig::new(port_name, baud_rate);
+    config.data_bits = match data_bits {
         5 => DataBits::Five,
         6 => DataBits::Six,
         7 => DataBits::Seven,
         _ => DataBits::Eight,
     };
-    let p_mode = match parity.as_str() {
+    config.parity = match parity {
         "Odd" => Parity::Odd,
         "Even" => Parity::Even,
         _ => Parity::None,
     };
-    let s_bits = match stop_bits {
-        2 => StopBits::Two,
-        _ => StopBits::One,
+    config.stop_bits = if stop_bits == 2 {
+        StopBits::Two
+    } else {
+        StopBits::One
     };
-    let f_control = match flow_control.as_str() {
-        "Hardware" => FlowControl::Hardware,
-        _ => FlowControl::None,
+    config.flow_control = if flow_control == "Hardware" {
+        FlowControl::Hardware
+    } else {
+        FlowControl::None
     };
-
-    let port_builder = serialport::new(&port_name, baud_rate)
-        .data_bits(d_bits)
-        .flow_control(f_control)
-        .parity(p_mode)
-        .stop_bits(s_bits)
-        .timeout(Duration::from_millis(50));
-
-    match port_builder.open() {
-        Ok(mut port) => {
-            let _ = port.clear(serialport::ClearBuffer::Input);
-
-            let mut port_clone = port.try_clone().map_err(|e| e.to_string())?;
-
-            // Fix de Ruído
-            let _ = port.write_data_terminal_ready(false);
-            let _ = port.write_request_to_send(false);
-
-            // Liga o interruptor
-            state.running.store(true, Ordering::Relaxed);
-
-            // Salva o port principal
-            let mut state_port = state.port.lock().map_err(|_| "Lock fail")?;
-            *state_port = Some(port);
-
-            // PREPARAÇÃO PARA A THREAD
-            let keep_running = state.running.clone();
-            let log_file_arc = state.log_file.clone();
-            let port_name_clone = port_name.clone();
-
-            thread::spawn(move || {
-                let mut serial_buf: Vec<u8> = vec![0; 1024];
-                println!("Thread de leitura iniciada: {}", port_name_clone);
-
-                loop {
-                    if !keep_running.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    match port_clone.read(serial_buf.as_mut_slice()) {
-                        Ok(t) => {
-                            if t > 0 {
-                                let data = &serial_buf[..t];
-
-                                // --- GRAVAÇÃO NO ARQUIVO ---
-                                // Usamos o ARC clonado aqui dentro
-                                if let Ok(mut lock) = log_file_arc.lock() {
-                                    if let Some(file) = lock.as_mut() {
-                                        let _ = file.write_all(data);
-                                        let _ = file.flush();
-                                    }
-                                }
-
-                                if let Err(_) = app.emit("serial-data", data) {
-                                    break;
-                                }
-                            }
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
-                        Err(e) => {
-                            eprintln!("Erro fatal ({}): {:?}", port_name_clone, e);
-                            let _ = app.emit("connection-lost", e.to_string());
-                            break;
-                        }
-                    }
-                }
-            });
-
-            Ok(format!("Conectado a {}", port_name))
-        }
-        Err(e) => Err(format!("Falha ao abrir: {}", e)),
-    }
+    config
 }
 
 #[command]
 pub fn close_port(state: State<'_, SerialState>) -> Result<String, String> {
-    state.running.store(false, Ordering::Relaxed);
-
-    let mut state_port = state.port.lock().map_err(|_| "Lock fail")?;
-    *state_port = None;
+    state.session.lock().map_err(|_| "Lock fail")?.stop()?;
 
     println!("Desconectado.");
     Ok("Desconectado.".to_string())
@@ -190,16 +141,16 @@ pub fn write_serial(
     content: String,
     state: State<'_, SerialState>,
 ) -> Result<usize, String> {
-    let mut port_guard = state.port.lock().map_err(|e| e.to_string())?;
+    let mut port_guard = state.session.lock().map_err(|e| e.to_string())?;
 
-    if let Some(port) = port_guard.as_mut() {
+    if let Some(port) = port_guard.connection.as_mut() {
         let bytes = content.as_bytes();
         match port.write(bytes) {
             Ok(size) => {
                 if let Ok(mut lock) = state.log_file.lock() {
                     if let Some(file) = lock.as_mut() {
                         let _ = file.write_all(b"\n>>> [TX] ");
-                        
+
                         let _ = file.write_all(bytes);
 
                         if !bytes.ends_with(b"\n") {
@@ -211,7 +162,7 @@ pub fn write_serial(
                 }
 
                 let _ = app.emit("serial-tx", size);
-                
+
                 let _ = app.emit("serial-sent", bytes.to_vec());
 
                 Ok(size)
@@ -229,12 +180,12 @@ pub fn set_control_pin(
     active: bool,
     state: State<'_, SerialState>,
 ) -> Result<(), String> {
-    let mut state_port = state.port.lock().map_err(|_| "Falha no Lock")?;
+    let mut state_port = state.session.lock().map_err(|_| "Falha no Lock")?;
 
-    if let Some(port) = state_port.as_mut() {
+    if let Some(port) = state_port.connection.as_mut() {
         let result = match pin.as_str() {
-            "DTR" => port.write_data_terminal_ready(active),
-            "RTS" => port.write_request_to_send(active),
+            "DTR" => port.set_dtr(active),
+            "RTS" => port.set_rts(active),
             _ => Err(serialport::Error::new(
                 serialport::ErrorKind::InvalidInput,
                 "Pino inválido",
@@ -281,44 +232,34 @@ pub fn start_spy_bridge(
     baud_rate: u32,
     state: State<'_, SerialState>,
 ) -> Result<String, String> {
-    state.running.store(false, Ordering::Relaxed);
-    thread::sleep(Duration::from_millis(100));
-
-    let builder_a = serialport::new(&port_a_name, baud_rate).timeout(Duration::from_millis(10));
-    let builder_b = serialport::new(&port_b_name, baud_rate).timeout(Duration::from_millis(10));
-
-    let port_a = builder_a
-        .open()
-        .map_err(|e| format!("Falha porta A: {}", e))?;
-    let port_b = builder_b
-        .open()
-        .map_err(|e| format!("Falha porta B: {}", e))?;
-
+    let mut session = state.session.lock().map_err(|_| "Lock fail")?;
+    session.stop()?;
+    let mut config_a = SerialConfig::new(port_a_name, baud_rate);
+    config_a.timeout = Duration::from_millis(10);
+    let mut config_b = SerialConfig::new(port_b_name, baud_rate);
+    config_b.timeout = Duration::from_millis(10);
+    let port_a = SerialConnection::open(&config_a).map_err(|e| format!("Falha porta A: {}", e))?;
+    let port_b = SerialConnection::open(&config_b).map_err(|e| format!("Falha porta B: {}", e))?;
     let mut port_a_read = port_a.try_clone().map_err(|e| e.to_string())?;
     let mut port_b_write = port_b.try_clone().map_err(|e| e.to_string())?;
-
     let mut port_b_read = port_b.try_clone().map_err(|e| e.to_string())?;
     let mut port_a_write = port_a.try_clone().map_err(|e| e.to_string())?;
-
-    state.running.store(true, Ordering::Relaxed);
-    let keep_running = state.running.clone();
-
-    {
-        let mut state_port = state.port.lock().map_err(|_| "Lock fail")?;
-        *state_port = Some(port_a);
-    }
+    let keep_running = session.start(port_a)?;
 
     let app_handle1 = app.clone();
     let keep_running1 = keep_running.clone();
 
-    thread::spawn(move || {
+    session.workers.push(thread::spawn(move || {
         let mut buf = [0u8; 1024];
         loop {
-            if !keep_running1.load(Ordering::Relaxed) {
+            if !keep_running1.load(Ordering::Acquire) {
                 break;
             }
 
             if let Ok(n) = port_a_read.read(&mut buf) {
+                if !keep_running1.load(Ordering::Acquire) {
+                    break;
+                }
                 if n > 0 {
                     let data = &buf[..n];
                     let _ = app_handle1.emit("spy-data-a", data);
@@ -326,19 +267,22 @@ pub fn start_spy_bridge(
                 }
             }
         }
-    });
+    }));
 
     let app_handle2 = app.clone();
     let keep_running2 = keep_running.clone();
 
-    thread::spawn(move || {
+    session.workers.push(thread::spawn(move || {
         let mut buf = [0u8; 1024];
         loop {
-            if !keep_running2.load(Ordering::Relaxed) {
+            if !keep_running2.load(Ordering::Acquire) {
                 break;
             }
 
             if let Ok(n) = port_b_read.read(&mut buf) {
+                if !keep_running2.load(Ordering::Acquire) {
+                    break;
+                }
                 if n > 0 {
                     let data = &buf[..n];
                     let _ = app_handle2.emit("spy-data-b", data);
@@ -346,7 +290,45 @@ pub fn start_spy_bridge(
                 }
             }
         }
-    });
+    }));
 
     Ok("Spy Mode Iniciado".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gui_config_preserves_supported_settings() {
+        let config = gui_config("fake".into(), 57600, 7, "Hardware", "Even", 2);
+        assert_eq!(config.port_name, "fake");
+        assert_eq!(config.baud_rate, 57600);
+        assert_eq!(config.data_bits, DataBits::Seven);
+        assert_eq!(config.flow_control, FlowControl::Hardware);
+        assert_eq!(config.parity, Parity::Even);
+        assert_eq!(config.stop_bits, StopBits::Two);
+        assert_eq!(config.timeout, Duration::from_millis(50));
+        assert_eq!(
+            gui_config("fake".into(), 9600, 5, "None", "Odd", 1).data_bits,
+            DataBits::Five
+        );
+        assert_eq!(
+            gui_config("fake".into(), 9600, 6, "None", "Odd", 1).data_bits,
+            DataBits::Six
+        );
+        assert_eq!(
+            gui_config("fake".into(), 9600, 8, "None", "Odd", 1).parity,
+            Parity::Odd
+        );
+    }
+
+    #[test]
+    fn gui_config_keeps_existing_fallbacks_for_unrecognized_inputs() {
+        let config = gui_config("fake".into(), 115200, 0, "Software", "unknown", 0);
+        assert_eq!(config.data_bits, DataBits::Eight);
+        assert_eq!(config.flow_control, FlowControl::None);
+        assert_eq!(config.parity, Parity::None);
+        assert_eq!(config.stop_bits, StopBits::One);
+    }
 }

@@ -1,8 +1,6 @@
 use serde::Deserialize;
-use serialport::SerialPort;
 use std::collections::HashMap;
 use std::fs::File;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -41,12 +39,13 @@ struct Win32_NetworkAdapter {
 }
 
 pub struct SerialState {
-    pub port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
-    pub running: Arc<AtomicBool>,
+    pub session: Mutex<serial_session::SerialSession>,
     pub log_file: Arc<Mutex<Option<File>>>,
     pub tx_count: Arc<std::sync::atomic::AtomicU64>,
     pub rx_count: Arc<std::sync::atomic::AtomicU64>,
 }
+
+mod serial_session;
 
 mod commands {
     pub mod serial_cmd;
@@ -62,8 +61,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(SerialState {
-            port: Arc::new(Mutex::new(None)),
-            running: Arc::new(AtomicBool::new(false)),
+            session: Mutex::new(serial_session::SerialSession::default()),
             log_file: Arc::new(Mutex::new(None)),
             tx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             rx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -201,7 +199,7 @@ pub fn run() {
                 let mut last_count = 0;
                 let mut last_names: Vec<String> = Vec::new();
                 loop {
-                    if let Ok(ports) = serialport::available_ports() {
+                    if let Ok(ports) = serialhub_core::list_ports() {
                         let names: Vec<String> = ports.iter().map(|p| p.port_name.clone()).collect();
                         if ports.len() != last_count || names != last_names {
                             let _ = handle_ports.emit("ports-changed", ());

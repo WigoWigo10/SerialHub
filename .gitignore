@@ -6,6 +6,8 @@ node_modules/
 dist/
 
 src-tauri/target/
+crates/serialhub-core/target/
+crates/serialhub-cli/target/
 
 src-tauri/gen/
 src-tauri/bundle/

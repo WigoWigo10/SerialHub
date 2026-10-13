@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { transitionTheme } from '../lib/themeTransition';
 
 export type ActivityMode = 'SERIAL' | 'SETTINGS' | 'DASHBOARD' | 'monitor' | 'BLUETOOTH' | 'SPY' | 'MQTT';
 
@@ -42,7 +43,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       theme: 'dark',
       viewMode: 'ASCII',
       localEcho: false,
@@ -60,7 +61,7 @@ export const useSettingsStore = create<SettingsState>()(
       activityMode: 'SERIAL',
       isSidebarOpen: true,
 
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => transitionTheme(theme, get().theme, () => set({ theme })),
       setLanguage: (lang) => set({ language: lang }),
       setViewMode: (mode) => set({ viewMode: mode }),
       toggleLocalEcho: () => set((state) => ({ localEcho: !state.localEcho })),

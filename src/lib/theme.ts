@@ -1,25 +1,15 @@
 import { useSettingsStore } from "../stores/settingsStore";
+import { cancelThemeTransition } from "./themeTransition";
 
 // Apply CSS colors directly; changing theme does not require rendering App.
-// Disable transitions for the switch so colors change together, then restore
-// normal hover/layout transitions after the browser has painted the new theme.
+// Animation is coordinated before the store changes by themeTransition.
 export function startThemeSync() {
   const root = document.documentElement;
-  let firstFrame = 0;
-  let secondFrame = 0;
 
   const applyTheme = (theme: "dark" | "light") => {
-    cancelAnimationFrame(firstFrame);
-    cancelAnimationFrame(secondFrame);
-    root.classList.add("theme-changing");
     root.classList.toggle("dark", theme === "dark");
     root.classList.toggle("light", theme === "light");
     root.style.colorScheme = theme;
-    firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
-        root.classList.remove("theme-changing");
-      });
-    });
   };
 
   applyTheme(useSettingsStore.getState().theme);
@@ -29,8 +19,6 @@ export function startThemeSync() {
 
   return () => {
     unsubscribe();
-    cancelAnimationFrame(firstFrame);
-    cancelAnimationFrame(secondFrame);
-    root.classList.remove("theme-changing");
+    cancelThemeTransition();
   };
 }

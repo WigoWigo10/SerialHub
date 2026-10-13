@@ -180,7 +180,7 @@ export function DashboardPage() {
                         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{stats.cpu_brand}</h2>
                         <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500">
                             <span>{stats.cpu_vendor}</span>
-                            <span>â€¢</span>
+                            <span>•</span>
                             <span className={stats.cpu_freq > 3000 ? "text-emerald-500 font-bold" : ""}>{stats.cpu_freq} MHz</span>
                         </div>
                     </div>

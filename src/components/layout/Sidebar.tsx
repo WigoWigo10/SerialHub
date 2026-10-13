@@ -115,8 +115,6 @@ export function Sidebar() {
     toggleTimestamp,
     isRecording,
     setRecording,
-    setConnected,
-    setActivePort,
     activePort,
   } = useSettingsStore(
     useShallow((state) => ({
@@ -126,8 +124,6 @@ export function Sidebar() {
       toggleTimestamp: state.toggleTimestamp,
       isRecording: state.isRecording,
       setRecording: state.setRecording,
-      setConnected: state.setConnected,
-      setActivePort: state.setActivePort,
       activePort: state.activePort,
     })),
   );
@@ -176,17 +172,8 @@ export function Sidebar() {
     const unlistenPorts = listen("ports-changed", () =>
       setTimeout(() => scanPorts(), 500),
     );
-    const unlistenError = listen("connection-lost", async () => {
-      try {
-        await invoke("close_port");
-      } catch (e) {}
-      setActivePort(null);
-      setConnected(false);
-      setTimeout(() => scanPorts(), 1000);
-    });
     return () => {
       unlistenPorts.then((f) => f());
-      unlistenError.then((f) => f());
     };
   }, []);
 
@@ -201,11 +188,7 @@ export function Sidebar() {
         parity,
         flowControl,
       });
-      setActivePort(portName);
-      setConnected(true);
     } catch (error) {
-      setConnected(false);
-      setActivePort(null);
       alert(`${t("alert_error_prefix")} ${error}`);
     }
   };
@@ -215,9 +198,6 @@ export function Sidebar() {
       await invoke("close_port");
     } catch (e) {
       console.error(e);
-    } finally {
-      setConnected(false);
-      setActivePort(null);
     }
   };
 
@@ -249,11 +229,8 @@ export function Sidebar() {
         parity: overrides.parity ?? parity,
         flowControl: overrides.flow ?? flowControl,
       });
-      setConnected(true);
     } catch (error) {
       console.error("Erro ao atualizar config:", error);
-      setConnected(false);
-      setActivePort(null);
       alert(`${t("alert_error_prefix")} ${error}`);
     }
   };

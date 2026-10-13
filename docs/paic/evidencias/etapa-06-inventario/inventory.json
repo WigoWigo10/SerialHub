@@ -1,0 +1,26 @@
+{
+  "serial_ports": [
+    {
+      "DeviceID": "COM3",
+      "Name": "Intel(R) Active Management Technology - SOL (COM3)",
+      "PNPDeviceID": "PCI\\VEN_8086&DEV_7E73&SUBSYS_A7431558&REV_20\\3&11583659&0&B3",
+      "Description": "Intel(R) Active Management Technology - SOL"
+    }
+  ],
+  "registry": [
+    {
+      "port": "COM3",
+      "device": "\\Device\\Serial0"
+    }
+  ],
+  "pnp": [
+    {
+      "Name": "Intel(R) Active Management Technology - SOL (COM3)",
+      "PNPDeviceID": "PCI\\VEN_8086&DEV_7E73&SUBSYS_A7431558&REV_20\\3&11583659&0&B3",
+      "Service": "Serial",
+      "Status": "OK",
+      "Manufacturer": "Intel"
+    }
+  ],
+  "drivers": []
+}

@@ -6,8 +6,13 @@ import {
 import { open } from '@tauri-apps/plugin-shell';
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
+import { useDisplayRefreshRate } from "../../hooks/useDisplayRefreshRate";
+import { DASHBOARD_REFRESH_RATES, effectiveRefreshRate, isRefreshRateAvailable, normalizeRefreshRate } from "../../lib/dashboardRefresh";
 
 export function SettingsPage() {
+  const displayHz = useDisplayRefreshRate();
+  const dashboardRefreshRate = useSettingsStore(state => state.dashboardRefreshRate);
+  const setDashboardRefreshRate = useSettingsStore(state => state.setDashboardRefreshRate);
   const { 
     theme, setTheme, 
     language, setLanguage 
@@ -103,6 +108,29 @@ export function SettingsPage() {
                     </div>
                 </button>
 
+            </div>
+        </section>
+
+        <section className="space-y-4 pt-6 border-t border-slate-200 dark:border-slate-800/50">
+            <div className="flex items-center gap-2 text-sm font-bold text-blue-500 uppercase tracking-widest">
+                <Laptop size={16} /> {t('dash_refresh_rate')}
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <label htmlFor="dashboard-refresh-rate" className="text-sm font-bold">{t('ws_dashboard_title')}</label>
+                    <select id="dashboard-refresh-rate" value={effectiveRefreshRate(dashboardRefreshRate, displayHz)}
+                        onChange={event => {
+                            const rate = event.target.value === 'auto' ? 'auto' : normalizeRefreshRate(Number(event.target.value));
+                            if (isRefreshRateAvailable(rate, displayHz)) setDashboardRefreshRate(rate);
+                        }}
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 px-3 py-2">
+                        {DASHBOARD_REFRESH_RATES.map(rate => <option key={rate} value={rate} disabled={!isRefreshRateAvailable(rate, displayHz)}>
+                            {rate === 'auto' ? t('dash_refresh_auto') : `${rate} Hz`}{!isRefreshRateAvailable(rate, displayHz) ? ` — ${t('dash_refresh_unavailable')}` : ''}
+                        </option>)}
+                    </select>
+                </div>
+                <p className="text-xs text-slate-500">{displayHz === null ? t('dash_refresh_unknown') : `${t('dash_refresh_display')}: ${displayHz} Hz`}</p>
+                <p className="text-xs leading-relaxed text-slate-500">{t('dash_refresh_hint')}</p>
             </div>
         </section>
 

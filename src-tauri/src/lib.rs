@@ -39,13 +39,17 @@ struct Win32_NetworkAdapter {
 }
 
 pub struct SerialState {
-    pub session: Mutex<serial_session::SerialSession>,
+    pub session: Arc<Mutex<serial_session::SerialSession>>,
+    pub failures: std::sync::mpsc::Sender<serial_session::SessionFailure>,
+    pub cleanup_worker: Mutex<Option<thread::JoinHandle<()>>>,
     pub log_file: Arc<Mutex<Option<File>>>,
     pub tx_count: Arc<std::sync::atomic::AtomicU64>,
     pub rx_count: Arc<std::sync::atomic::AtomicU64>,
 }
 
 mod serial_session;
+mod hardware;
+mod display;
 
 mod commands {
     pub mod serial_cmd;
@@ -55,31 +59,46 @@ use commands::mqtt_cmd;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let (failures, failure_receiver) = std::sync::mpsc::channel();
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         // .plugin(tauri_plugin_bluetooth::init()) // Desativado temporariamente
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(SerialState {
-            session: Mutex::new(serial_session::SerialSession::default()),
+            session: Arc::new(Mutex::new(serial_session::SerialSession::default())),
+            failures,
+            cleanup_worker: Mutex::new(None),
             log_file: Arc::new(Mutex::new(None)),
             tx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             rx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
         .manage(mqtt_cmd::MqttState::default()) // <--- INICIALIZA O ESTADO MQTT
 
-        .setup(|app| {
+        .setup(move |app| {
+            let state = app.state::<SerialState>();
+            let session = state.session.clone();
+            let notifier = app.handle().clone();
+            let supervisor = serial_session::spawn_failure_supervisor(session, failure_receiver, move |snapshot| {
+                if let Some(error) = &snapshot.error { let _ = notifier.emit("connection-lost", error); }
+                let _ = notifier.emit("serial-connection-state", snapshot);
+            })?;
+            *state.cleanup_worker.lock().unwrap() = Some(supervisor);
             #[cfg(debug_assertions)]
             { if let Some(w) = app.get_webview_window("main") { w.open_devtools(); } }
 
             let handle_sys = app.handle().clone();
             thread::spawn(move || {
-                let mut gpu_name = "Integrated Graphics".to_string();
+                let mut gpus = hardware::graphics_adapters(Vec::new());
                 let mut ram_details = "Unknown".to_string();
                 let mut ram_speed = 0;
                 let mut npu_name = "None".to_string();
                 let mut net_adapter_name = "Ethernet/WiFi".to_string();
                 let mut bt_detected = false;
+                let mut last_battery_refresh = std::time::Instant::now() - Duration::from_secs(10);
+                let mut bat_percent = 0;
+                let mut is_charging = false;
+                let mut has_battery = false;
 
                 #[cfg(target_os = "windows")]
                 {
@@ -88,7 +107,7 @@ pub fn run() {
                         if let Ok(wmi) = WMIConnection::new(com) {
                             // GPU
                             if let Ok(res) = wmi.query::<Win32_VideoController>() {
-                                if let Some(gpu) = res.first() { gpu_name = gpu.name.clone(); }
+                                gpus = hardware::merge_names(gpus, res.into_iter().map(|gpu| gpu.name).collect());
                             }
                             // RAM
                             if let Ok(res) = wmi.query::<Win32_PhysicalMemory>() {
@@ -101,10 +120,12 @@ pub fn run() {
                                 }
                             }
                             // NPU
-                            let q_npu = "SELECT Name FROM Win32_PnPEntity WHERE Name LIKE '%AI Boost%' OR Name LIKE '%NPU%'";
+                            let q_npu = "SELECT Name FROM Win32_PnPEntity WHERE Status = 'OK' AND (PNPClass = 'ComputeAccelerator' OR Name LIKE '%AI Boost%' OR Name LIKE '%Neural%' OR Name LIKE '%NPU%' OR Name LIKE '%IPU%' OR Name LIKE '%Ryzen AI%')";
                             if let Ok(res) = wmi.raw_query::<HashMap<String, Variant>>(q_npu) {
-                                if let Some(item) = res.first() {
-                                    if let Some(Variant::String(s)) = item.get("Name") { npu_name = s.clone(); }
+                                for item in res {
+                                    if let Some(Variant::String(s)) = item.get("Name") {
+                                        if hardware::recognized_npu(s) { npu_name = s.clone(); break; }
+                                    }
                                 }
                             }
                             // NETWORK ADAPTER
@@ -148,12 +169,10 @@ pub fn run() {
                     let cpu_vendor = if !cpus.is_empty() { cpus[0].vendor_id().to_string() } else { "".to_string() };
 
                     // BATERIA (Windows Only)
-                    let mut bat_percent = 0;
-                    let mut is_charging = false;
-                    let mut has_battery = false;
-
                     #[cfg(target_os = "windows")]
+                    if last_battery_refresh.elapsed() >= Duration::from_secs(10)
                     {
+                        last_battery_refresh = std::time::Instant::now();
                         use wmi::{COMLibrary, WMIConnection};
                         if let Ok(com) = COMLibrary::new() {
                             if let Ok(wmi) = WMIConnection::new(com) {
@@ -178,7 +197,8 @@ pub fn run() {
                         "cpu_vendor": cpu_vendor,
                         "cores_phys": sys.physical_core_count().unwrap_or(0),
                         "cores_log": cpus.len(),
-                        "gpu_name": gpu_name,
+                        "gpu_name": gpus.first().map(|gpu| gpu.name.as_str()).unwrap_or(""),
+                        "gpus": gpus,
                         "ram_details": ram_details,
                         "ram_speed": ram_speed,
                         "npu_name": npu_name,
@@ -190,7 +210,7 @@ pub fn run() {
                     });
 
                     let _ = handle_sys.emit("system-stats", payload);
-                    thread::sleep(Duration::from_secs(2));
+                    thread::sleep(Duration::from_millis(500));
                 }
             });
 
@@ -214,10 +234,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            display::display_refresh_rate,
             // Serial Port Commands
             commands::serial_cmd::list_ports,
             commands::serial_cmd::open_port,
             commands::serial_cmd::close_port,
+            commands::serial_cmd::serial_connection_state,
             commands::serial_cmd::write_serial,
             commands::serial_cmd::set_control_pin,
             commands::serial_cmd::start_recording,
@@ -231,6 +253,16 @@ pub fn run() {
             mqtt_cmd::unsubscribe_mqtt,
             mqtt_cmd::check_file_exists
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app.try_state::<SerialState>() {
+                    if let Ok(mut session) = state.session.lock() { let _ = session.stop(); }
+                    let _ = state.failures.send(serial_session::SessionFailure::Shutdown);
+                    let worker = state.cleanup_worker.lock().ok().and_then(|mut worker| worker.take());
+                    if let Some(worker) = worker { let _ = worker.join(); }
+                }
+            }
+        });
 }

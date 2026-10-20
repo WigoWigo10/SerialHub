@@ -48,10 +48,12 @@ pub struct SerialState {
 }
 
 mod serial_session;
+mod mqtt_session;
 mod hardware;
 mod display;
 
 mod commands {
+    pub mod mqtt_transport;
     pub mod serial_cmd;
     pub mod mqtt_cmd;
 }
@@ -76,6 +78,13 @@ pub fn run() {
         .manage(mqtt_cmd::MqttState::default()) // <--- INICIALIZA O ESTADO MQTT
 
         .setup(move |app| {
+            let mqtt_notifier = app.handle().clone();
+            app.state::<mqtt_cmd::MqttState>().service.set_notifier(move |notice| {
+                match notice {
+                    mqtt_session::Notice::State(snapshot) => { let _ = mqtt_notifier.emit("mqtt-state", snapshot); }
+                    mqtt_session::Notice::Message(message) => { let _ = mqtt_notifier.emit("mqtt-message", message); }
+                }
+            });
             let state = app.state::<SerialState>();
             let session = state.session.clone();
             let notifier = app.handle().clone();
@@ -246,6 +255,9 @@ pub fn run() {
             commands::serial_cmd::stop_recording,
 
             // MQTT Commands
+            mqtt_cmd::mqtt_begin_attempt,
+            mqtt_cmd::mqtt_connection_state,
+            mqtt_cmd::cancel_mqtt,
             mqtt_cmd::connect_mqtt,
             mqtt_cmd::disconnect_mqtt,
             mqtt_cmd::publish_mqtt,
@@ -257,6 +269,9 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app.try_state::<mqtt_cmd::MqttState>() {
+                    tauri::async_runtime::block_on(state.service.shutdown());
+                }
                 if let Some(state) = app.try_state::<SerialState>() {
                     if let Ok(mut session) = state.session.lock() { let _ = session.stop(); }
                     let _ = state.failures.send(serial_session::SessionFailure::Shutdown);

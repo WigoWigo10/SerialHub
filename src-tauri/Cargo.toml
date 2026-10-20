@@ -28,8 +28,15 @@ env_logger = "0.11.5"
 once_cell = "1.20.2"
 parking_lot = "0.12.3"
 rumqttc = { version = "0.24", features = ["use-rustls", "websocket"] }
+# Already in the locked rumqttc dependency tree; used to validate TLS before connecting.
+rustls-pemfile = "2.2"
+rustls-native-certs = "0.7"
+webpki = { package = "rustls-webpki", version = "0.102" }
 uuid = { version = "1.10", features = ["v4"] }
 tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_Graphics_DXCore", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader"] }

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Cloud,
@@ -33,13 +32,10 @@ import { MqttChart } from "../mqtt/MqttChart";
 import { useMqttStore, MqttProfile } from "../../stores/mqttStore";
 import { useLanguage } from "../../hooks/useLanguage";
 import { useSettingsStore } from "../../stores/settingsStore";
-
-interface MqttMessage {
-  topic: string;
-  payload: string;
-  qos: number;
-  timestamp: string;
-}
+import { useMqttSessionStore } from "../../stores/mqttSessionStore";
+import { mqttCommands } from "../../lib/mqttCommands";
+import { mqttOperation } from "../../lib/mqttSession";
+import { MqttTransport, mqttTransports, isSecureTransport, mqttConfigurationError } from "../../lib/mqttTransport";
 
 interface ChartDataPoint {
   time: string;
@@ -133,6 +129,10 @@ export function MqttPage() {
   const [caPath, setCaPath] = useState("");
   const [certPath, setCertPath] = useState("");
   const [keyPath, setKeyPath] = useState("");
+  const [transport, setTransport] = useState<MqttTransport>('tcp');
+  const [websocketPath, setWebsocketPath] = useState('/mqtt');
+  const [transportNeedsReview, setTransportNeedsReview] = useState(false);
+  const [reviewProfileId, setReviewProfileId] = useState<string | null>(null);
 
   const securityBackupRef = useRef({ ca: "", cert: "", key: "", profileName: null as string | null });
 
@@ -142,14 +142,16 @@ export function MqttPage() {
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
 
   // Estado Conexão
-  const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [messages, setMessages] = useState<MqttMessage[]>([]);
-  const isConnectingRef = useRef(false);
+  const mqttSnapshot = useMqttSessionStore(state => state.snapshot);
+  const reserving = useMqttSessionStore(state => state.reserving);
+  const isConnected = mqttSnapshot.status === 'connected';
+  const isConnecting = reserving || mqttSnapshot.status === 'connecting' || mqttSnapshot.status === 'stopping';
+  const messages = useMqttSessionStore(state => state.messages);
+  const processedMessages = useRef(0);
 
   // Subscrições e Publish
   const [subTopic, setSubTopic] = useState("serialhub/#");
-  const [activeSubs, setActiveSubs] = useState<string[]>([]);
+  const activeSubs = useMqttSessionStore(state => state.subscriptions);
   const [pubTopic, setPubTopic] = useState("serialhub/teste");
   const [pubMessage, setPubMessage] = useState("Olá MQTT!");
   const [retain, setRetain] = useState(false);
@@ -165,7 +167,7 @@ export function MqttPage() {
   const lwtBackupRef = useRef({ topic: "", payload: "", qos: 0, retain: false, profileName: null as string | null });
 
   // Estado para WebSockets
-  const [useWebsockets, setUseWebsockets] = useState(false);
+  const useWebsockets = transport === 'ws' || transport === 'wss';
 
   // Gráficos
   const [chartTopics, setChartTopics] = useState<string[]>([]);
@@ -173,26 +175,6 @@ export function MqttPage() {
     Record<string, ChartDataPoint[]>
   >({});
 
-  const toastIdRef = useRef<string | undefined>(undefined);
-  const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tRef = useRef(t);
-  useEffect(() => { tRef.current = t; });
-
-  useEffect(() => {
-    if (useWebsockets) {
-      // Se estava na porta TCP padrão (1883), muda para WS padrão (8000)
-      if (port === 1883) setPort(8000);
-    } else {
-      // Se estava na porta WS padrão (8000), muda para TCP padrão (1883)
-      if (port === 8000) setPort(1883);
-    }
-  }, [useWebsockets]);
-
-  useEffect(() => {
-    isConnectingRef.current = isConnecting;
-  }, [isConnecting]);
-
-  // --- LÓGICA DO MODAL LWT (SNAPSHOT/ROLLBACK) ---
   const openLwtModal = () => {
     lwtBackupRef.current = { topic: lwtTopic, payload: lwtPayload, qos: lwtQos, retain: lwtRetain, profileName: activeProfileName };
     setIsLwtModalOpen(true);
@@ -280,6 +262,8 @@ export function MqttPage() {
 
   const handleConfirmSave = () => {
     if (!tempProfileName.trim()) return toast.error(t('mqtt_toast_invalid_name'));
+    const error = configurationError();
+    if (error) return toast.error(t(error));
     
     if (caValid === false || certValid === false || keyValid === false) {
       return toast.error(t('mqtt_toast_fix_errors'), { icon: '🚫' });
@@ -292,7 +276,7 @@ export function MqttPage() {
       savedTopics: activeSubs,
       caFilePath: caPath, certFilePath: certPath, keyFilePath: keyPath,
       lwtTopic, lwtPayload, lwtQos, lwtRetain,
-      useWebsockets: useWebsockets
+      transport, transportNeedsReview: false, websocketPath,
     });
     
     setActiveProfileName(tempProfileName);
@@ -322,6 +306,8 @@ export function MqttPage() {
   };
 
   const confirmSecurityModal = () => {
+    const error = configurationError(false);
+    if (error) { toast.error(t(error)); return; }
     if ((certPath && !keyPath) || (!certPath && keyPath)) {
       toast.error(t('mqtt_toast_cert_mismatch'), { icon: "⚠️" });
       return;
@@ -335,7 +321,7 @@ export function MqttPage() {
     const changed = caPath !== securityBackupRef.current.ca ||
       certPath !== securityBackupRef.current.cert ||
       keyPath !== securityBackupRef.current.key;
-    if (changed) setActiveProfileName(null);
+    if (changed) { setActiveProfileName(null); setReviewProfileId(null); }
     setIsSecurityModalOpen(false);
   };
 
@@ -358,7 +344,10 @@ export function MqttPage() {
     setLwtPayload(p.lwtPayload || "");
     setLwtQos(p.lwtQos || 0);
     setLwtRetain(p.lwtRetain || false);
-    setUseWebsockets(p.useWebsockets || false);
+    setTransport(p.transport);
+    setTransportNeedsReview(p.transportNeedsReview);
+    setReviewProfileId(p.id);
+    setWebsocketPath(p.websocketPath || '/mqtt');
 
     const pathsToCheck = [
       { name: 'CA', path: p.caFilePath },
@@ -392,25 +381,20 @@ export function MqttPage() {
 
   const handleInputChange = (setter: (val: any) => void, value: any) => {
     setter(value);
+    setReviewProfileId(null);
     if (activeProfileName) setActiveProfileName(null);
   };
 
   // --- LISTENERS DE EVENTOS (MENSAGENS E STATUS) ---
   useEffect(() => {
-    // Array para guardar as Promessas de cancelamento
-    const unlistenPromises: Promise<() => void>[] = [];
-
-    console.log("[LISTENER-DEBUG] Iniciando configuração dos ouvintes MQTT...");
-
-    // 1. Listener de Mensagens
-    const pMsg = listen<MqttMessage>("mqtt-message", (event) => {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString();
-      const newMsg = { ...event.payload, timestamp: timeStr };
-      const topic = event.payload.topic;
-
-      setMessages((prev) => [...prev, newMsg]);
-
+    const start = processedMessages.current > messages.length ? 0 : processedMessages.current;
+    const fresh = messages.slice(start);
+    processedMessages.current = messages.length;
+    fresh.forEach(message => {
+      const event = { payload: message };
+      const now = new Date(message.receivedAt);
+      const timeStr = message.timestamp;
+      const topic = message.topic;
       setChartHistory((prevHistory) => {
         const newHistory: typeof prevHistory = Object.assign(Object.create(null), prevHistory);
         let changed = false;
@@ -452,136 +436,38 @@ export function MqttPage() {
         return changed ? newHistory : prevHistory;
       });
     });
-    unlistenPromises.push(pMsg);
-
-    // 2. Listener de Status
-    const pStatus = listen<string>("mqtt-status", (event) => {
-      console.log("[LISTENER-DEBUG] Evento de STATUS recebido:", event.payload);
-      const status = event.payload;
-
-      if (status === "connected") {
-        if (safetyTimeoutRef.current !== null) {
-          clearTimeout(safetyTimeoutRef.current);
-          safetyTimeoutRef.current = null;
-        }
-        isConnectingRef.current = false;
-        setIsConnected(true);
-        setIsConnecting(false);
-
-        if (toastIdRef.current) {
-          toast.success(tRef.current('mqtt_toast_connected'), { id: toastIdRef.current });
-          toastIdRef.current = undefined;
-        } else {
-          toast.success(tRef.current('mqtt_toast_connected'));
-        }
-      } else if (status === "disconnected") {
-        setIsConnected(false);
-        setIsConnecting(false);
-        setActiveSubs([]);
-
-        if (toastIdRef.current) {
-          toast.success(tRef.current('mqtt_toast_disconnected'), { id: toastIdRef.current, icon: "🔌" });
-          toastIdRef.current = undefined;
-        }
-      }
-    });
-    unlistenPromises.push(pStatus);
-
-    // 3. Listener de Erros
-    const pError = listen<string>("mqtt-error", (event) => {
-      console.error("[LISTENER-DEBUG] Evento de ERRO recebido:", event.payload);
-
-      // Cancela o timer de segurança se ainda estiver pendente
-      if (safetyTimeoutRef.current !== null) {
-        clearTimeout(safetyTimeoutRef.current);
-        safetyTimeoutRef.current = null;
-      }
-
-      // Se o timer de segurança já disparou e tratou o erro, apenas limpa o estado
-      if (!isConnectingRef.current) {
-        setIsConnected(false);
-        return;
-      }
-
-      isConnectingRef.current = false;
-      setIsConnecting(false);
-      setIsConnected(false);
-
-      let errorMsg = event.payload;
-      if (errorMsg.includes("Network timeout") || errorMsg.includes("NetworkTimeout")) {
-        errorMsg = tRef.current('mqtt_err_timeout');
-      }
-      if (errorMsg.includes("refused")) errorMsg = tRef.current('mqtt_err_refused');
-
-      if (toastIdRef.current) {
-        toast.error(errorMsg, { id: toastIdRef.current, duration: 5000 });
-        toastIdRef.current = undefined;
-      } else {
-        toast.error(errorMsg);
-      }
-    });
-    unlistenPromises.push(pError);
-
-    // FUNÇÃO DE LIMPEZA (CLEANUP)
-    return () => {
-      console.log("[LISTENER-DEBUG] Limpando listeners...");
-      unlistenPromises.forEach(p => {
-        p.then(unlisten => unlisten());
-      });
-    };
-  }, []);
+  }, [messages]);
 
   const handleConnectToggle = async () => {
-    if (isConnectingRef.current) return;
-
-    if (isConnected) {
-      // --- LÓGICA DE DESCONEXÃO ---
-      toastIdRef.current = toast.loading(t('mqtt_msg_disconnecting'));
-      try {
-        await invoke("disconnect_mqtt");
-      } catch (error) {
-        toast.error(`${t('mqtt_err_generic')}${error}`, { id: toastIdRef.current });
+    const state = useMqttSessionStore.getState();
+    if (state.reserving || state.snapshot.status === 'connecting' || state.snapshot.status === 'stopping') return;
+    try {
+      if (state.snapshot.status === 'connected') await mqttCommands.disconnect();
+      else {
+        const error = configurationError();
+        if (error) { toast.error(t(error)); return; }
+        const connectionParams = {
+          broker,
+          port: Number(port),
+          clientId,
+          username: username || null,
+          password: password || null,
+          caPath: caPath || null,
+          certPath: certPath || null,
+          keyPath: keyPath || null,
+          lwtTopic: lwtTopic || null,
+          lwtPayload: lwtPayload || null,
+          lwtQos: lwtQos,
+          lwtRetain: lwtRetain,
+          transport,
+          websocketPath: useWebsockets ? websocketPath : null,
+        };
+        await mqttCommands.connect(connectionParams);
       }
-    } else {
-      // --- LÓGICA DE CONEXÃO ---
-      isConnectingRef.current = true;
-      setIsConnecting(true);
-      toastIdRef.current = toast.loading(`${t('mqtt_msg_connecting')} ${broker}:${port}...`);
-      
-      const connectionParams = {
-        broker,
-        port: Number(port),
-        clientId,
-        username: username || null,
-        password: password || null,
-        caPath: caPath || null,
-        certPath: certPath || null,
-        keyPath: keyPath || null,
-        lwtTopic: lwtTopic || null,
-        lwtPayload: lwtPayload || null,
-        lwtQos: lwtQos,
-        lwtRetain: lwtRetain,
-        useWebsockets: useWebsockets
-      };
-
-      
-      // --- TIMER DE SEGURANÇA ---
-      safetyTimeoutRef.current = setTimeout(() => {
-        safetyTimeoutRef.current = null;
-        if (!isConnectingRef.current) return;
-        isConnectingRef.current = false;
-        toast.error(tRef.current('mqtt_err_timeout'), { id: toastIdRef.current });
-        toastIdRef.current = undefined;
-        setIsConnecting(false);
-      }, 5000);
-
-      try {
-        await invoke("connect_mqtt", connectionParams);
-      } catch (error) {
-        setIsConnecting(false);
-        toast.error(`${t('mqtt_err_failed')}${error}`, { id: toastIdRef.current });
-      }
-    }
+    } catch (error) { toast.error(String(error)); }
+  };
+  const handleCancelConnection = async () => {
+    try { await mqttCommands.cancel(); } catch (error) { toast.error(String(error)); }
   };
 
   const handleSubscribe = async () => {
@@ -590,9 +476,12 @@ export function MqttPage() {
       return toast(t('mqtt_warn_already_sub'), { icon: "ℹ️" });
       
     try {
-      await invoke("subscribe_mqtt", { topic: subTopic });
-      setActiveSubs((prev) => [...prev, subTopic]);
-      toast.success(`${t('mqtt_msg_subscribed')}${subTopic}`);
+      const id = useMqttSessionStore.getState().snapshot.session_id;
+      await mqttOperation(id, () => useMqttSessionStore.getState().snapshot,
+        () => invoke("subscribe_mqtt", { topic: subTopic, expectedSessionId: id }), () => {
+          useMqttSessionStore.getState().subscription(id, subTopic, true);
+          toast.success(`${t('mqtt_msg_subscribed')}${subTopic}`);
+        });
     } catch (e) {
       toast.error(t('mqtt_err_sub'));
     }
@@ -600,9 +489,12 @@ export function MqttPage() {
 
   const handleUnsubscribe = async (topicToRemove: string) => {
     try {
-      await invoke("unsubscribe_mqtt", { topic: topicToRemove });
-      setActiveSubs((prev) => prev.filter((t) => t !== topicToRemove));
-      toast.success(`${t('mqtt_msg_unsubscribed')}${topicToRemove}`, { icon: "🗑️" });
+      const id = useMqttSessionStore.getState().snapshot.session_id;
+      await mqttOperation(id, () => useMqttSessionStore.getState().snapshot,
+        () => invoke("unsubscribe_mqtt", { topic: topicToRemove, expectedSessionId: id }), () => {
+          useMqttSessionStore.getState().subscription(id, topicToRemove, false);
+          toast.success(`${t('mqtt_msg_unsubscribed')}${topicToRemove}`, { icon: "🗑️" });
+        });
     } catch (e) {
       toast.error(t('mqtt_err_unsub'));
     }
@@ -611,17 +503,18 @@ export function MqttPage() {
   const handlePublish = async () => {
     if (!isConnected) return;
     try {
-      await invoke("publish_mqtt", {
+      const id = useMqttSessionStore.getState().snapshot.session_id;
+      await mqttOperation(id, () => useMqttSessionStore.getState().snapshot, () => invoke("publish_mqtt", {
+        expectedSessionId: id,
         topic: pubTopic,
         payload: pubMessage,
         qos: 0,
         retain,
-      });
-      toast.success(t('mqtt_msg_published'), {
+      }), () => { toast.success(t('mqtt_msg_published'), {
         duration: 1000,
         icon: "📤",
         position: "bottom-right",
-      });
+      }); });
     } catch (e) {
       toast.error(t('mqtt_err_pub'));
     }
@@ -693,7 +586,21 @@ export function MqttPage() {
   };
 
   const isAlreadySubscribed = activeSubs.includes(subTopic);
-  const hasSecurityConfig = caPath || certPath || keyPath;
+  const hasSecurityConfig = isSecureTransport(transport);
+  function configurationError(requireReview = true) {
+    return mqttConfigurationError({ transport, transportNeedsReview: requireReview && transportNeedsReview,
+      broker, caPath, certPath, keyPath, websocketPath });
+  }
+  const confirmTransport = () => {
+    const error = configurationError(false);
+    if (error) { toast.error(t(error)); return; }
+    setTransportNeedsReview(false);
+    if (reviewProfileId) useMqttStore.getState().updateProfile(reviewProfileId, {
+      transport, transportNeedsReview: false, websocketPath,
+    });
+  };
+
+  const connectionInputClass = "h-[34px] w-full min-w-0 rounded border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors shadow-sm disabled:opacity-60";
 
   return (
     <div
@@ -733,100 +640,98 @@ export function MqttPage() {
           </div>
         )}
 
-        {/* CONTROLES */}
-        <div className="flex flex-wrap items-end gap-3 p-4">
-            
-          {/* 1. SELETOR DE PERFIL */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-bold uppercase text-slate-400">{t('mqtt_profile')}</label>
-            <div className="relative z-50">
-              <button onClick={() => setShowProfiles(!showProfiles)} disabled={isConnected || isConnecting} className={`h-[34px] w-[34px] flex items-center justify-center rounded border transition-colors ${activeProfileName ? "border-emerald-300 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/10" : "border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"}`}><BookMarked size={18} /></button>
-              {showProfiles && (
-                <div className="absolute top-10 left-0 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100 z-[60]">
-                  <div className="p-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-between items-center rounded-t-lg">
-                    <span className="text-xs font-bold uppercase text-slate-500">{t('mqtt_saved_profiles')}</span>
-                    <button onClick={handleOpenSaveModal} className="text-emerald-600 hover:text-emerald-500 text-xs flex items-center gap-1 font-bold"><Plus size={12}/> {t('mqtt_new_profile')}</button>
+        {/* Endpoint labels remain aligned independently of transport notices. */}
+        <div className="flex flex-col gap-3 p-4">
+          <div className={`grid grid-cols-2 items-end gap-3 sm:grid-cols-[4rem_7rem_minmax(0,1fr)_6rem] ${useWebsockets ? "lg:grid-cols-[4rem_7rem_minmax(0,1fr)_6rem_minmax(12rem,0.65fr)]" : ""}`}>
+            {/* 1. SELETOR DE PERFIL */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="mqtt-profile" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_profile')}</label>
+              <div className="relative z-50">
+                <button id="mqtt-profile" aria-label={t('mqtt_profile')} aria-expanded={showProfiles} onClick={() => setShowProfiles(!showProfiles)} disabled={isConnected || isConnecting} className={`h-[34px] w-full flex items-center justify-center rounded border transition-colors ${activeProfileName ? "border-emerald-300 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/10" : "border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"}`}><BookMarked size={18} /></button>
+                {showProfiles && (
+                  <div className="absolute top-10 left-0 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100 z-[60]">
+                    <div className="p-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-between items-center rounded-t-lg">
+                      <span className="text-xs font-bold uppercase text-slate-500">{t('mqtt_saved_profiles')}</span>
+                      <button onClick={handleOpenSaveModal} className="text-emerald-600 hover:text-emerald-500 text-xs flex items-center gap-1 font-bold"><Plus size={12}/> {t('mqtt_new_profile')}</button>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto p-1">
+                      {profiles.map(p => (
+                        <div key={p.id} className="flex items-center justify-between p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded group cursor-pointer" onClick={() => handleLoadProfile(p)}>
+                          <div className="flex flex-col"><span className="text-sm font-medium">{p.name}</span><span className="text-[10px] text-slate-400 font-mono">{p.broker}:{p.port}</span></div>
+                          <button onClick={(e) => { e.stopPropagation(); removeProfile(p.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="max-h-60 overflow-y-auto p-1">
-                    {profiles.map(p => (
-                      <div key={p.id} className="flex items-center justify-between p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded group cursor-pointer" onClick={() => handleLoadProfile(p)}>
-                        <div className="flex flex-col"><span className="text-sm font-medium">{p.name}</span><span className="text-[10px] text-slate-400 font-mono">{p.broker}:{p.port}</span></div>
-                        <button onClick={(e) => { e.stopPropagation(); removeProfile(p.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 2. BROKER & PORTA */}
-          <div className="flex flex-col gap-1">
-            <div className="flex justify-between items-center">
-              <label className="text-xs font-bold uppercase text-slate-400">{t('mqtt_broker_port')}</label>
-              
-              {/* TOGGLE WS */}
-              <div 
-                className={`flex items-center gap-1 cursor-pointer transition-colors ${useWebsockets ? "text-blue-500" : "text-slate-400 hover:text-slate-500"}`}
-                onClick={() => !isConnected && !isConnecting && setUseWebsockets(!useWebsockets)}
-                title={useWebsockets ? t('mqtt_ws_active') : t('mqtt_tcp_active')}
-              >
-                <span className="text-[9px] font-bold">{useWebsockets ? "WS/WSS" : "TCP"}</span>
-                <Globe size={10} />
+                )}
               </div>
             </div>
-
-            <div className="flex shadow-sm relative">
-              <input 
-                value={broker} onChange={e => handleInputChange(setBroker, e.target.value)} disabled={isConnected || isConnecting} 
-                className={`px-3 py-1.5 h-[34px] rounded-l border border-r-0 border-slate-300 dark:border-slate-700 bg-transparent text-sm w-36 font-mono outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all z-10 placeholder:text-slate-300 truncate ${useWebsockets ? "text-blue-600 dark:text-blue-400 font-bold" : ""}`}
-                placeholder="broker.hivemq.com" 
-              />
-              <div className="border-t border-b border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 flex items-center text-slate-400 text-xs font-mono">:</div>
-              <input 
-                type="number" value={port} onChange={e => handleInputChange(setPort, Number(e.target.value))} disabled={isConnected || isConnecting} 
-                className="px-2 py-1.5 h-[34px] rounded-r border border-l-0 border-slate-300 dark:border-slate-700 bg-transparent text-sm w-16 font-mono outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-center text-slate-600 dark:text-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
-              />
-              
-              {useWebsockets && (
-                <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse pointer-events-none" />
-              )}
-            </div>
-          </div>
-
-          {/* 3. CLIENT ID */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-bold uppercase text-slate-400">{t('mqtt_client_id')}</label>
-            <input value={clientId} onChange={e => handleInputChange(setClientId, e.target.value)} disabled={isConnected || isConnecting} className="px-3 py-1.5 h-[34px] rounded border border-slate-300 dark:border-slate-700 bg-transparent text-sm w-32 font-mono text-slate-500 outline-none focus:border-blue-500 transition-colors shadow-sm" />
-          </div>
-          
-          {/* 4. CREDENCIAIS + BOTÕES DE SEGURANÇA */}
-          <div className="flex gap-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-bold uppercase text-slate-400">{t('mqtt_user')}</label>
-              <input value={username} onChange={e => handleInputChange(setUsername, e.target.value)} disabled={isConnected || isConnecting} className="px-3 py-1.5 h-[34px] rounded border border-slate-300 dark:border-slate-700 bg-transparent text-sm w-28 outline-none focus:border-blue-500 transition-colors shadow-sm" placeholder={t('mqtt_user_placeholder')} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-bold uppercase text-slate-400">{t('mqtt_pass')}</label>
-              <div className="flex gap-1"> 
-                  
-                {/* Wrapper Senha */}
-                <div className="relative w-28">
-                  <input type={showPassword ? "text" : "password"} value={password} onChange={e => handleInputChange(setPassword, e.target.value)} disabled={isConnected || isConnecting} className="w-full px-3 py-1.5 h-[34px] rounded border border-slate-300 dark:border-slate-700 bg-transparent text-sm outline-none focus:border-blue-500 transition-colors shadow-sm pr-8 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden" placeholder={t('mqtt_pass_placeholder')} />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} disabled={isConnected || isConnecting || !password} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors disabled:opacity-30" tabIndex={-1}>{showPassword ? <EyeOff size={14} /> : <Eye size={14} />}</button>
-                </div>
-
-                {/* Botão Cadeado */}
-                <button onClick={openSecurityModal} disabled={isConnected || isConnecting} className={`h-[34px] w-[34px] flex items-center justify-center rounded border transition-colors ${hasSecurityConfig ? "bg-amber-50 border-amber-300 text-amber-600 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400" : "border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"}`} title={hasSecurityConfig ? t('mqtt_tls_configured') : t('mqtt_tls_configure')}><Lock size={16} strokeWidth={hasSecurityConfig ? 2.5 : 2} /></button>
-                
-                {/* Botão Caveira (LWT) */}
-                <button onClick={openLwtModal} disabled={isConnected || isConnecting} className={`h-[34px] w-[34px] flex items-center justify-center rounded border transition-colors ${hasLwtConfig ? "bg-purple-50 border-purple-300 text-purple-600 dark:bg-purple-900/20 dark:border-purple-700 dark:text-purple-400" : "border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"}`} title={hasLwtConfig ? `${t('mqtt_lwt_active')} ${lwtTopic}` : t('mqtt_lwt_configure')}><Skull size={16} strokeWidth={hasLwtConfig ? 2.5 : 2} /></button>
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="mqtt-transport" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_transport_caption')}</label>
+              <div className="relative">
+                <Globe size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <select id="mqtt-transport" aria-label={t('mqtt_transport_label')} value={transport} disabled={isConnected || isConnecting}
+                  onChange={e => handleInputChange(setTransport, e.target.value as MqttTransport)}
+                  className={`${connectionInputClass} pl-8 pr-2`}>
+                  {mqttTransports.map(mode => <option key={mode} value={mode} className="bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-200">{mode.toUpperCase()}</option>)}
+                </select>
               </div>
             </div>
+            <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1">
+              <label htmlFor="mqtt-broker" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_broker_label')}</label>
+              <input id="mqtt-broker" value={broker} title={broker}
+                onChange={e => handleInputChange(setBroker, e.target.value)} disabled={isConnected || isConnecting}
+                className={`${connectionInputClass} font-mono`} placeholder="broker.hivemq.com" />
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="mqtt-port" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_port_label')}</label>
+              <input id="mqtt-port" aria-label={t('mqtt_port_label')} type="number" value={port}
+                onChange={e => handleInputChange(setPort, Number(e.target.value))} disabled={isConnected || isConnecting}
+                className={`${connectionInputClass} font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} />
+            </div>
+            {useWebsockets && <div className="flex min-w-0 flex-col gap-1 sm:col-span-4 lg:col-span-1">
+              <label htmlFor="mqtt-ws-path" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_transport_path_label')}</label>
+              <input id="mqtt-ws-path" aria-label={t('mqtt_transport_path_label')} value={websocketPath}
+                onChange={e => handleInputChange(setWebsocketPath, e.target.value)} disabled={isConnected || isConnecting}
+                className={`${connectionInputClass} font-mono`} placeholder="/mqtt" />
+            </div>}
           </div>
-
-          {/* 5. BOTÃO CONECTAR */}
-          <button onClick={handleConnectToggle} disabled={isConnecting} className={`ml-auto px-6 py-1.5 h-[34px] rounded-lg font-bold text-sm flex items-center gap-2 transition-all shadow-sm active:scale-95 ${isConnected ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/50" : "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-500/25"}`}>{isConnected ? <WifiOff size={16} /> : <Wifi size={16} />}{isConnected ? t('mqtt_disconnect') : (isConnecting ? t('mqtt_connecting') : t('mqtt_connect'))}</button>
+          <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">{t(hasSecurityConfig ? 'mqtt_transport_secure' : 'mqtt_transport_plain')}</p>
+          {transportNeedsReview && <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/10 dark:text-amber-300">
+            <p>{t('mqtt_transport_review')}</p>
+            <button type="button" onClick={confirmTransport} className="underline font-bold">{t('mqtt_transport_confirm')}</button>
+          </div>}
+          {/* Credentials and actions stay aligned across TCP, TLS, WS and WSS. */}
+          <div className="grid grid-cols-1 items-end gap-3 border-t border-slate-200 pt-3 dark:border-slate-800 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="mqtt-client-id" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_client_id')}</label>
+              <input id="mqtt-client-id" value={clientId} onChange={e => handleInputChange(setClientId, e.target.value)}
+                disabled={isConnected || isConnecting} className={`${connectionInputClass} font-mono`} />
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="mqtt-username" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_user')}</label>
+              <input id="mqtt-username" value={username} onChange={e => handleInputChange(setUsername, e.target.value)}
+                disabled={isConnected || isConnecting} className={connectionInputClass} placeholder={t('mqtt_user_placeholder')} />
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="mqtt-password" className="text-xs font-bold uppercase text-slate-400">{t('mqtt_pass')}</label>
+              <div className="relative min-w-0">
+                <input id="mqtt-password" type={showPassword ? "text" : "password"} value={password}
+                  onChange={e => handleInputChange(setPassword, e.target.value)} disabled={isConnected || isConnecting}
+                  className={`${connectionInputClass} pr-9 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden`} placeholder={t('mqtt_pass_placeholder')} />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} disabled={isConnected || isConnecting || !password}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors disabled:opacity-30" tabIndex={-1}>
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={openSecurityModal} disabled={isConnected || isConnecting} className={`h-[34px] w-[34px] shrink-0 flex items-center justify-center rounded border transition-colors ${hasSecurityConfig ? "bg-amber-50 border-amber-300 text-amber-600 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400" : "border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"}`} title={hasSecurityConfig ? t('mqtt_tls_configured') : t('mqtt_tls_configure')}><Lock size={16} strokeWidth={hasSecurityConfig ? 2.5 : 2} /></button>
+              {/* Botão Caveira (LWT) */}
+              <button onClick={openLwtModal} disabled={isConnected || isConnecting} className={`h-[34px] w-[34px] shrink-0 flex items-center justify-center rounded border transition-colors ${hasLwtConfig ? "bg-purple-50 border-purple-300 text-purple-600 dark:bg-purple-900/20 dark:border-purple-700 dark:text-purple-400" : "border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"}`} title={hasLwtConfig ? `${t('mqtt_lwt_active')} ${lwtTopic}` : t('mqtt_lwt_configure')}><Skull size={16} strokeWidth={hasLwtConfig ? 2.5 : 2} /></button>
+              <button onClick={handleConnectToggle} disabled={isConnecting} className={`justify-center flex-1 sm:flex-none px-6 py-1.5 h-[34px] rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap transition-all shadow-sm active:scale-95 ${isConnected ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/50" : "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-500/25"}`}>{isConnected ? <WifiOff size={16} /> : <Wifi size={16} />}{isConnected ? t('mqtt_disconnect') : (isConnecting ? t('mqtt_connecting') : t('mqtt_connect'))}</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -968,7 +873,8 @@ export function MqttPage() {
 
                 <button
                   onClick={() => {
-                    setMessages([]);
+                    useMqttSessionStore.getState().clearMessages();
+                    processedMessages.current = 0;
                     setChartHistory({});
                   }}
                   className="p-1.5 hover:bg-red-100 text-slate-400 hover:text-red-500 rounded transition-colors"
@@ -988,6 +894,7 @@ export function MqttPage() {
                 viewMode={viewMode}
               />
             </div>
+
           </div>
 
           {/* GRÁFICOS */}
@@ -1022,7 +929,7 @@ export function MqttPage() {
             
             <div className="flex flex-col items-center gap-1">
               <span className="font-bold text-lg text-slate-700 dark:text-slate-200 animate-pulse">
-                {t('mqtt_msg_connecting')}...
+                {t(mqttSnapshot.status === 'stopping' ? 'mqtt_stopping_connection' : reserving && mqttSnapshot.status !== 'connecting' ? 'mqtt_reserving_connection' : 'mqtt_msg_connecting')}...
               </span>
               <span className="text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded">
                 {broker}:{port}
@@ -1031,10 +938,11 @@ export function MqttPage() {
 
             {/* Botão de Emergência (Opcional, caso trave muito tempo) */}
             <button 
-              onClick={() => setIsConnecting(false)}
+              onClick={handleCancelConnection}
+              disabled={mqttSnapshot.status === 'stopping'}
               className="mt-2 text-[10px] text-red-400 hover:text-red-500 uppercase font-bold tracking-widest hover:underline"
             >
-              Cancelar
+              {t('mqtt_cancel_connection')}
             </button>
           </div>
         </div>
@@ -1065,13 +973,13 @@ export function MqttPage() {
             </div>
             
             <p className="text-xs text-slate-500 mb-4 bg-slate-50 dark:bg-slate-950 p-2 rounded border border-slate-100 dark:border-slate-800">
-                {t('mqtt_modal_tls_desc')}
+                {t('mqtt_transport_trust')}
             </p>
 
             <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-100 dark:border-amber-800/50 mb-4">
               <p className="text-xs text-amber-800 dark:text-amber-200 font-medium flex items-start gap-2">
                 <Activity size={14} className="mt-0.5 shrink-0"/>
-                {t('mqtt_sec_auto_check')}
+                {t('mqtt_transport_client_optional')}
               </p>
             </div>
 

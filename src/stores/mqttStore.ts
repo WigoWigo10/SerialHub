@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { migrateMqttTransport, MqttTransport } from '../lib/mqttTransport';
 
 export interface MqttProfile {
   id: string;
@@ -22,6 +23,9 @@ export interface MqttProfile {
   lwtRetain?: boolean;
   
   useWebsockets?: boolean;
+  transport: MqttTransport;
+  transportNeedsReview: boolean;
+  websocketPath?: string;
 }
 
 interface MqttStoreState {
@@ -34,7 +38,7 @@ interface MqttStoreState {
 // Also discard passwords supplied by legacy callers or stored profiles.
 const withoutPassword = (profile: MqttProfile): MqttProfile => {
   const { password: _password, ...settings } = profile as MqttProfile & { password?: unknown };
-  return settings;
+  return migrateMqttTransport(settings);
 };
 
 export const useMqttStore = create<MqttStoreState>()(
@@ -62,13 +66,14 @@ export const useMqttStore = create<MqttStoreState>()(
             const stored = JSON.parse(raw);
             // Rewrite old JSON immediately, even before any profile is edited.
             // Keep the envelope and every other profile field intact.
-            if (Array.isArray(stored?.state?.profiles) && stored.state.profiles.some(
-              (profile: MqttProfile) => Object.prototype.hasOwnProperty.call(profile, 'password')
-            )) {
-              stored.state.profiles = stored.state.profiles.map(withoutPassword);
-              const cleaned = JSON.stringify(stored);
-              storage.setItem(name, cleaned);
-              return cleaned;
+            if (Array.isArray(stored?.state?.profiles)) {
+              const cleanedProfiles = stored.state.profiles.map(withoutPassword);
+              if (JSON.stringify(cleanedProfiles) !== JSON.stringify(stored.state.profiles)) {
+                stored.state.profiles = cleanedProfiles;
+                const cleaned = JSON.stringify(stored);
+                storage.setItem(name, cleaned);
+                return cleaned;
+              }
             }
             return raw;
           },

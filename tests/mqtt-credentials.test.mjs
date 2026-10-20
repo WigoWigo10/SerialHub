@@ -13,7 +13,11 @@ after(() => rm(directory, { recursive: true, force: true }));
 const source = await readFile(new URL('../src/stores/mqttStore.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
-}).outputText;
+}).outputText.replace('../lib/mqttTransport', './mqttTransport.mjs');
+await writeFile(join(directory, 'mqttTransport.mjs'), ts.transpileModule(
+  await readFile(new URL('../src/lib/mqttTransport.ts', import.meta.url), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } },
+).outputText);
 const modulePath = join(directory, 'store.mjs');
 await writeFile(modulePath, compiled);
 const values = new Map();
@@ -32,6 +36,7 @@ const profile = {
   caFilePath: 'C:/fake/ca.pem', certFilePath: 'C:/fake/cert.pem', keyFilePath: 'C:/fake/key.pem',
   lwtTopic: 'status/offline', lwtPayload: 'offline', lwtQos: 2, lwtRetain: true,
   useWebsockets: true, futureSetting: { preserve: true },
+  transport: 'wss', transportNeedsReview: false,
 };
 
 async function load(value) {
@@ -120,6 +125,8 @@ test('page keeps password input/IPC but never passes connection credentials to c
   inspect(ast);
   assert.match(page, /setPassword\(""\)/);
   assert.match(page, /password: password \|\| null/);
-  assert.match(page, /invoke\("connect_mqtt", connectionParams\)/);
+  assert.ok(page.includes('mqttCommands.connect(connectionParams)'), 'credentials must reach the session controller');
+  const commands = await readFile(new URL('../src/lib/mqttCommands.ts', import.meta.url), 'utf8');
+  assert.ok(commands.includes("invoke('connect_mqtt', { ...config, expectedSessionId: id })"));
   assert.doesNotMatch(page, /p\.password/);
 });

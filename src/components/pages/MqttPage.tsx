@@ -412,11 +412,11 @@ export function MqttPage() {
       setMessages((prev) => [...prev, newMsg]);
 
       setChartHistory((prevHistory) => {
-        const newHistory = { ...prevHistory };
+        const newHistory: typeof prevHistory = Object.assign(Object.create(null), prevHistory);
         let changed = false;
 
         // Tópico MQTT direto
-        if (prevHistory[topic] !== undefined) {
+        if (Object.prototype.hasOwnProperty.call(prevHistory, topic)) {
           const val = parseFloat(event.payload.payload);
           if (!isNaN(val)) {
             newHistory[topic] = [...(prevHistory[topic] || []), {
@@ -436,7 +436,7 @@ export function MqttPage() {
             const parts = fieldPath.split('.');
             let fieldVal: any = json;
             for (const part of parts) {
-              if (fieldVal == null || typeof fieldVal !== 'object') { fieldVal = undefined; break; }
+              if (fieldVal == null || typeof fieldVal !== 'object' || !Object.prototype.hasOwnProperty.call(fieldVal, part)) { fieldVal = undefined; break; }
               fieldVal = fieldVal[part];
             }
             const numVal = parseFloat(String(fieldVal));
@@ -635,7 +635,7 @@ export function MqttPage() {
 
     setChartTopics((prev) => [...prev, topic]);
     setChartHistory((prev) => {
-      if (prev[topic] && prev[topic].length > 0) return prev;
+      if (Object.prototype.hasOwnProperty.call(prev, topic) && prev[topic].length > 0) return prev;
 
       let initialData: ChartDataPoint[] = [];
 
@@ -655,7 +655,7 @@ export function MqttPage() {
             const parts = fieldPath.split('.');
             let fieldVal: any = json;
             for (const part of parts) {
-              if (fieldVal == null || typeof fieldVal !== 'object') { fieldVal = undefined; break; }
+              if (fieldVal == null || typeof fieldVal !== 'object' || !Object.prototype.hasOwnProperty.call(fieldVal, part)) { fieldVal = undefined; break; }
               fieldVal = fieldVal[part];
             }
             const numVal = parseFloat(String(fieldVal));
@@ -997,7 +997,7 @@ export function MqttPage() {
                 <MqttChart
                   key={`${topic}-${theme}`} 
                   topic={topic}
-                  data={chartHistory[topic] || []}
+                  data={Object.prototype.hasOwnProperty.call(chartHistory, topic) ? chartHistory[topic] : []}
                   color={CHART_COLORS[index % CHART_COLORS.length]}
                   onClose={() => handleHideChart(topic)}
                   onStop={() => handleStopChart(topic)}

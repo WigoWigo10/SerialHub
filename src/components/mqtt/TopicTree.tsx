@@ -12,6 +12,7 @@ interface TreeNode {
   isJson?: boolean;
   isVirtual?: boolean;
   children: Record<string, TreeNode>;
+  jsonChildren: Record<string, TreeNode>;
 }
 
 interface TopicTreeProps {
@@ -31,8 +32,21 @@ const toHexDisplay = (str?: string) => {
   return hex.trim();
 };
 
+// Received names are keys in data dictionaries, never properties of a node.
+const childDictionary = (): Record<string, TreeNode> => Object.create(null);
+const createNode = (name: string, fullName: string): TreeNode => ({
+  name, fullName, children: childDictionary(), jsonChildren: childDictionary(),
+});
+const hasChild = (children: Record<string, TreeNode>, name: string) =>
+  Object.prototype.hasOwnProperty.call(children, name);
+const treeChildren = (node: TreeNode): TreeNode[] => [
+  ...Object.values(node.children), ...Object.values(node.jsonChildren),
+];
+// A topic segment and JSON field may have the same literal name and fullName.
+const treeNodeKey = (node: TreeNode): string => JSON.stringify([node.isVirtual ? 'json' : 'topic', node.name]);
+
 const buildTree = (messages: TopicTreeProps['messages']) => {
-  const root: TreeNode = { name: "root", fullName: "", children: {} };
+  const root = createNode("root", "");
 
   messages.forEach((msg) => {
     const parts = msg.topic.split("/");
@@ -40,10 +54,10 @@ const buildTree = (messages: TopicTreeProps['messages']) => {
     let pathSoFar = "";
 
     parts.forEach((part, index) => {
-      pathSoFar += (pathSoFar ? "/" : "") + part;
+      pathSoFar += (index > 0 ? "/" : "") + part;
       
-      if (!current.children[part]) {
-        current.children[part] = { name: part, fullName: pathSoFar, children: {} };
+      if (!hasChild(current.children, part)) {
+        current.children[part] = createNode(part, pathSoFar);
       }
       current = current.children[part];
 
@@ -51,11 +65,8 @@ const buildTree = (messages: TopicTreeProps['messages']) => {
         current.timestamp = msg.timestamp;
         current.originalValue = msg.payload;
 
-        const realChildren: Record<string, TreeNode> = {};
-        Object.entries(current.children).forEach(([key, child]) => {
-            if (!child.isVirtual) realChildren[key] = child;
-        });
-        current.children = realChildren;
+        // Replace this payload's fields without changing actual MQTT subtopics.
+        current.jsonChildren = childDictionary();
         
         try {
           const json = JSON.parse(msg.payload);
@@ -78,22 +89,19 @@ const buildTree = (messages: TopicTreeProps['messages']) => {
   return root;
 };
 
-const processJsonToTree = (node: TreeNode, jsonObj: any) => {
-  Object.keys(jsonObj).forEach(key => {
-    const val = jsonObj[key];
+const processJsonToTree = (node: TreeNode, jsonObj: object) => {
+  Object.entries(jsonObj).forEach(([key, val]) => {
     const childName = key;
     
-    if (!node.children[childName]) {
-      node.children[childName] = { 
-        name: childName, 
-        fullName: `${node.fullName}.${childName}`, 
-        children: {},
+    if (!hasChild(node.jsonChildren, childName)) {
+      node.jsonChildren[childName] = {
+        ...createNode(childName, `${node.fullName}.${childName}`),
         isJson: true,
         isVirtual: true
       };
     }
     
-    const childNode = node.children[childName];
+    const childNode = node.jsonChildren[childName];
     
     if (typeof val === 'object' && val !== null) {
       childNode.value = "{...}";
@@ -116,7 +124,8 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
   const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(depth < 2);
   const [flash, setFlash] = useState(false);
-  const hasChildren = Object.keys(node.children).length > 0;
+  const children = treeChildren(node);
+  const hasChildren = children.length > 0;
   
   useEffect(() => {
     if (node.value) {
@@ -228,9 +237,9 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
 
       {isOpen && hasChildren && (
         <div className="border-l border-slate-200 dark:border-slate-800 ml-2.5">
-          {Object.values(node.children).sort((a,b) => a.name.localeCompare(b.name)).map((child) => (
+          {children.sort((a,b) => a.name.localeCompare(b.name)).map((child) => (
             <TreeNodeItem 
-              key={child.fullName} 
+              key={treeNodeKey(child)}
               node={child} 
               depth={depth + 1} 
               onToggleChart={onToggleChart} 
@@ -246,7 +255,8 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
 
 export function TopicTree({ messages, onToggleChart, recordedTopics = [], viewMode }: TopicTreeProps) {
   const tree = useMemo(() => buildTree(messages), [messages]);
-  const hasData = Object.keys(tree.children).length > 0;
+  const children = treeChildren(tree);
+  const hasData = children.length > 0;
   
   // 1. Inicializa o hook de tradução
   const { t } = useLanguage(); 
@@ -263,11 +273,11 @@ export function TopicTree({ messages, onToggleChart, recordedTopics = [], viewMo
 
   return (
     <div className="h-full overflow-y-auto pr-1 pb-10 group">
-      {Object.values(tree.children)
+      {children
         .sort((a, b) => a.name.localeCompare(b.name)) 
         .map((child) => (
           <TreeNodeItem 
-            key={child.fullName} 
+            key={treeNodeKey(child)}
             node={child} 
             depth={0} 
             onToggleChart={onToggleChart} 

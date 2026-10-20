@@ -16,7 +16,8 @@ import {
 import "@xterm/xterm/css/xterm.css";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
-import { toHex } from "../../lib/formatters";
+import { SerialPresentation, listenSafely } from "../../lib/serialPresentation";
+import toast from "react-hot-toast";
 
 interface ZoomFeedback {
   visible: boolean;
@@ -25,6 +26,7 @@ interface ZoomFeedback {
 
 export function TerminalArea() {
   const { t } = useLanguage();
+  const serialSessionId = useSettingsStore(state => state.serialSessionId);
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -32,7 +34,7 @@ export function TerminalArea() {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [zoomFeedback, setZoomFeedback] = useState<ZoomFeedback>({ visible: false, size: 14 });
-  const zoomTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const { 
     localEcho,
@@ -57,22 +59,29 @@ export function TerminalArea() {
   );
 
   const handleClear = () => {
-    if (xtermRef.current) {
-      xtermRef.current.clear();
-      console.log(t('clean_terminal')); 
-    }
+    const term = xtermRef.current;
+    if (!term) return;
+    presentation.current.reset();
+    // Place reset after already queued writes, before any subsequent RX writes.
+    term.write('', () => {
+      if (xtermRef.current !== term) return;
+      term.reset();
+      isUserAtBottomRef.current = true;
+      setShowScrollBtn(false);
+    });
   };
 
   const showTimestampRef = useRef(showTimestamp);
   const viewModeRef = useRef(viewMode);
   const localEchoRef = useRef(localEcho);
-  const isNewLineRef = useRef(true); 
+  const presentation = useRef(new SerialPresentation());
+  const copyTimeout = useRef<ReturnType<typeof setTimeout>>();
   const isUserAtBottomRef = useRef(true);
   
   const [isReceiving, setIsReceiving] = useState(false);
   const [tempMessage, setTempMessage] = useState<string | null>(null);
   //const tempTimeoutRef = useRef<number | null>(null);
-  const timeoutRef = useRef<number | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (!xtermRef.current) return;
@@ -117,24 +126,6 @@ export function TerminalArea() {
 
   }, [connected, activePort, isReceiving, tempMessage, t]);
 
-  useEffect(() => {
-    let unlisten: () => void;
-    const setupListener = async () => {
-      unlisten = await listen('serial-data', () => {
-        setIsReceiving(true);
-        setTempMessage(null);
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        // @ts-ignore
-        timeoutRef.current = setTimeout(() => setIsReceiving(false), 150);
-      });
-    };
-    if (connected) setupListener();
-    return () => {
-      if (unlisten) unlisten();
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, [connected]);
-
   const handleRedirectFocus = () => {
     // Só redireciona se o usuário NÃO estiver selecionando texto
     if (xtermRef.current?.hasSelection()) {
@@ -152,6 +143,11 @@ export function TerminalArea() {
     const now = new Date();
     return `\x1b[2m[${now.toLocaleTimeString()}]\x1b[0m `;
   };
+
+  useEffect(() => {
+    const tail = presentation.current.finish(showTimestampRef.current, getTimeBadge);
+    if (tail) xtermRef.current?.write(tail);
+  }, [serialSessionId, connected]);
   
   const checkPosition = (term: Terminal) => { 
       const isAtBottom = term.buffer.active.viewportY >= term.buffer.active.baseY;
@@ -169,10 +165,13 @@ export function TerminalArea() {
   const copySelection = async (term: Terminal) => { 
       const selection = term.getSelection();
       if (selection) {
-          await navigator.clipboard.writeText(selection);
-          setCopyFeedback(true);
-          setTimeout(() => setCopyFeedback(false), 2000);
-          term.clearSelection();
+          try {
+            await navigator.clipboard.writeText(selection);
+            setCopyFeedback(true);
+            clearTimeout(copyTimeout.current);
+            copyTimeout.current = setTimeout(() => setCopyFeedback(false), 2000);
+            term.clearSelection();
+          } catch (error) { toast.error(String(error)); }
       }
   };
 
@@ -195,7 +194,7 @@ export function TerminalArea() {
           if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
           zoomTimeoutRef.current = setTimeout(() => setZoomFeedback(prev => ({ ...prev, visible: false })), 1500);
       } else {
-          requestAnimationFrame(() => checkPosition(term));
+          requestAnimationFrame(() => { if (xtermRef.current === term) checkPosition(term); });
       }
   };
 
@@ -230,9 +229,7 @@ export function TerminalArea() {
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
     
-    setTimeout(() => {
-      fitAddon.fit();
-    }, 100);
+    const initialFit = setTimeout(() => { if (xtermRef.current === term) fitAddon.fit(); }, 100);
 
     term.onKey((e) => {
       // Ignora teclas de controle (como Ctrl+C para copiar)
@@ -270,48 +267,23 @@ export function TerminalArea() {
         return true;
     });
 
-    const unlistenRx = listen<number[]>("serial-data", (event) => {
-      const data = new Uint8Array(event.payload);
-      if (viewModeRef.current === 'HEX') {
-        const hexString = toHex(data);
-        term.write(`\x1b[38;5;46m${hexString} \x1b[0m`);
-      } else if (showTimestampRef.current) {
-        const text = new TextDecoder().decode(data);
-        if (isNewLineRef.current) {
-            term.write(getTimeBadge());
-            isNewLineRef.current = false;
-        }
-        const parts = text.split('\n');
-        for (let i = 0; i < parts.length; i++) {
-            if (parts[i].length > 0) term.write(parts[i]);
-            if (i < parts.length - 1) {
-                term.write('\r\n');
-                term.write(getTimeBadge());
-                isNewLineRef.current = false; 
-            }
-        }
-      } else {
-        term.write(data);
-      }
-      if (isUserAtBottomRef.current) term.scrollToBottom();
+    const writePresented = (text: string) => {
+      const follow = isUserAtBottomRef.current && !term.hasSelection();
+      term.write(text, () => {
+        if (xtermRef.current === term && follow && isUserAtBottomRef.current && !term.hasSelection()) term.scrollToBottom();
+      });
+    };
+    const unlistenRx = listenSafely<{ payload: number[] }>(receive => listen<number[]>("serial-data", receive), event => {
+      setIsReceiving(true);
+      setTempMessage(null);
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setIsReceiving(false), 150);
+      writePresented(presentation.current.receive(new Uint8Array(event.payload), viewModeRef.current, showTimestampRef.current, getTimeBadge));
+    });
+    const unlistenTx = listenSafely<{ payload: number[] }>(receive => listen<number[]>("serial-sent", receive), event => {
+      if (localEchoRef.current) writePresented(presentation.current.echo(new Uint8Array(event.payload), viewModeRef.current));
     });
 
-    const unlistenTx = listen<number[]>("serial-sent", (event) => {
-      if (!localEchoRef.current) return;
-      const data = new Uint8Array(event.payload);
-      term.scrollToBottom();
-      term.write('\r\n');
-      term.write('\x1b[1;37;45m TX \x1b[0m \x1b[1;35m '); 
-      if (viewModeRef.current === 'HEX') {
-           term.write(toHex(data));
-      } else {
-           const text = new TextDecoder().decode(data);
-           term.write(text.replace(/(\r\n|\n|\r)/gm, "")); 
-      }
-      term.write('\x1b[0m\r\n'); 
-      isNewLineRef.current = true;
-    });
-    
     window.addEventListener("terminal:clear", handleClear);
     const handleResize = () => fitAddon.fit();
     window.addEventListener("resize", handleResize);
@@ -320,9 +292,12 @@ export function TerminalArea() {
       termElement.removeEventListener('wheel', handleWheel);
       window.removeEventListener("terminal:clear", handleClear);
       window.removeEventListener("resize", handleResize);
+      unlistenRx(); unlistenTx();
+      resizeObserver.disconnect();
+      clearTimeout(initialFit); clearTimeout(timeoutRef.current);
+      clearTimeout(zoomTimeoutRef.current); clearTimeout(copyTimeout.current);
+      if (xtermRef.current === term) { xtermRef.current = null; fitAddonRef.current = null; }
       term.dispose();
-      unlistenRx.then(f => f());
-      unlistenTx.then(f => f());
     };
   }, []);
 

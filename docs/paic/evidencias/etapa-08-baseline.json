@@ -1,0 +1,9 @@
+{
+  "commit": "4034a62",
+  "gui": {
+    "fragmentText": "[19:12:46] \u00ef\u00bf\u00bd\u00ef\u00bf\u00bd\n[19:12:46]  ",
+    "replacement": false,
+    "retainedAfterClear": true,
+    "txCounterForThreeBytes": 6
+  }
+}

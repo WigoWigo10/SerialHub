@@ -6,19 +6,19 @@ export interface SerialConnectionState {
   error: string | null;
 }
 
-interface ConnectionMonitor {
-  subscribe: (receive: (state: SerialConnectionState) => void) => Promise<() => void>;
-  snapshot: () => Promise<SerialConnectionState>;
-  apply: (state: SerialConnectionState) => void;
+interface StateMonitor<T> {
+  subscribe: (receive: (state: T) => void) => Promise<() => void>;
+  snapshot: () => Promise<T>;
+  apply: (state: T) => void;
   reportError: (error: unknown) => void;
 }
 
 // Subscribe first, then reconcile the snapshot. The store rejects stale revisions.
 // Late subscription/snapshot completions must not update an unmounted App.
-export function startSerialConnectionMonitor(adapter: ConnectionMonitor): () => void {
+export function startStateMonitor<T>(adapter: StateMonitor<T>): () => void {
   let disposed = false;
   let unsubscribe: (() => void) | undefined;
-  const receive = (state: SerialConnectionState) => { if (!disposed) adapter.apply(state); };
+  const receive = (state: T) => { if (!disposed) adapter.apply(state); };
   void adapter.subscribe(receive).then(async stop => {
     if (disposed) { stop(); return; }
     unsubscribe = stop;
@@ -30,4 +30,15 @@ export function startSerialConnectionMonitor(adapter: ConnectionMonitor): () => 
     unsubscribe?.();
     unsubscribe = undefined;
   };
+}
+
+export function startSerialConnectionMonitor(adapter: StateMonitor<SerialConnectionState>): () => void {
+  return startStateMonitor(adapter);
+}
+
+export interface SerialRecordingState {
+  revision: number;
+  recording: boolean;
+  path: string | null;
+  error: string | null;
 }

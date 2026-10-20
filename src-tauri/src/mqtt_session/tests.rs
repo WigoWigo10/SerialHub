@@ -372,6 +372,15 @@ async fn loopback_real_mqtt_connect_cancel_and_reconnect() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let (received, wait_received) = oneshot::channel();
+    let payloads = vec![
+        b"42".to_vec(),
+        (0u8..=255).collect(),
+        vec![],
+        vec![0xc3],
+        vec![0xa9],
+        "é😀\r\n".as_bytes().to_vec(),
+    ];
+    let expected_payloads = payloads.clone();
     let broker = tokio::spawn(async move {
         // First attempt: deliberately withhold CONNACK, then observe socket close.
         let (mut first, _) = listener.accept().await.unwrap();
@@ -382,10 +391,24 @@ async fn loopback_real_mqtt_connect_cancel_and_reconnect() {
         let (mut second, _) = listener.accept().await.unwrap();
         assert_eq!(mqtt_frame(&mut second).await, 1);
         second.write_all(&[0x20, 2, 0, 0]).await.unwrap();
-        second
-            .write_all(&[0x30, 9, 0, 5, b't', b'o', b'p', b'i', b'c', b'4', b'2'])
-            .await
-            .unwrap();
+        for payload in payloads {
+            let mut packet = vec![0x30];
+            let mut length = 7 + payload.len();
+            loop {
+                let mut byte = (length % 128) as u8;
+                length /= 128;
+                if length > 0 {
+                    byte |= 128;
+                }
+                packet.push(byte);
+                if length == 0 {
+                    break;
+                }
+            }
+            packet.extend_from_slice(&[0, 5, b't', b'o', b'p', b'i', b'c']);
+            packet.extend_from_slice(&payload);
+            second.write_all(&packet).await.unwrap();
+        }
         assert_eq!(mqtt_frame(&mut second).await, 14);
     });
     let prepare = move || -> Prepare {
@@ -427,18 +450,24 @@ async fn loopback_real_mqtt_connect_cancel_and_reconnect() {
     )
     .await
     .unwrap();
-    let message = tokio::time::timeout(Duration::from_secs(3), async {
-        loop {
-            if let Some(Notice::Message(message)) = notices.recv().await {
-                break message;
+    for (index, expected) in expected_payloads.iter().enumerate() {
+        let message = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Some(Notice::Message(message)) = notices.recv().await {
+                    break message;
+                }
             }
-        }
-    })
-    .await
-    .unwrap();
-    assert_eq!(message.session_id, second);
-    assert_eq!(message.sequence, 1);
-    assert_eq!(message.payload, "42");
+        })
+        .await
+        .unwrap();
+        assert_eq!(message.session_id, second);
+        assert_eq!(message.state_revision, service.snapshot().revision);
+        assert_eq!(message.sequence, index as u64 + 1);
+        assert_eq!(&message.payload_bytes, expected);
+        let json = serde_json::to_value(&message).unwrap();
+        assert_eq!(json["payload_bytes"], serde_json::json!(expected));
+        assert!(json.get("payload").is_none());
+    }
     assert_eq!(
         service.disconnect(second).await.unwrap().status,
         Status::Disconnected
@@ -448,4 +477,26 @@ async fn loopback_real_mqtt_connect_cancel_and_reconnect() {
         .await
         .unwrap()
         .unwrap();
+}
+
+#[test]
+fn payload_serialization_preserves_every_byte_and_session_metadata() {
+    for bytes in [vec![], (0u8..=255).collect(), "é😀\r\n".as_bytes().to_vec()] {
+        let message = Message {
+            session_id: 7,
+            sequence: 3,
+            state_revision: 42,
+            topic: "__proto__/data".into(),
+            payload_bytes: bytes.clone(),
+            qos: 2,
+        };
+        let json = serde_json::to_value(&message).unwrap();
+        assert_eq!(json["payload_bytes"], serde_json::json!(bytes));
+        assert_eq!(json["session_id"], 7);
+        assert_eq!(json["sequence"], 3);
+        assert_eq!(json["state_revision"], 42);
+        assert_eq!(json["topic"], "__proto__/data");
+        assert_eq!(json["qos"], 2);
+        assert!(json.get("payload").is_none());
+    }
 }

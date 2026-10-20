@@ -129,7 +129,11 @@ fn write_ports(ports: &[SerialPortInfo], json: bool, out: &mut impl Write) -> io
         return writeln!(out, "Nenhuma porta serial encontrada.");
     }
     for port in ports {
-        writeln!(out, "{} ({})", port.port_name, port.port_type)?;
+        let label = match port.port_type.as_str() {
+            "Unknown" => "Desconhecida",
+            kind => kind,
+        };
+        writeln!(out, "{} ({})", port.port_name, label)?;
         for (label, value) in [
             ("VID", &port.vid),
             ("PID", &port.pid),
@@ -463,7 +467,7 @@ mod tests {
         first.product = "Sensor".into();
         let second = SerialPortInfo {
             port_name: "COM2".into(),
-            port_type: "Virtual".into(),
+            port_type: "Unknown".into(),
             vid: String::new(),
             pid: String::new(),
             manufacturer: String::new(),
@@ -482,7 +486,62 @@ mod tests {
         );
         assert!(err.is_empty());
         assert_eq!(String::from_utf8(out).unwrap(),
-            "COM7 (USB)\n  VID: 00ab\n  PID: 1234\n  Fabricante: Fabricante \"Teste\"\n  Produto: Sensor\nCOM2 (Virtual)\n");
+            "COM7 (USB)\n  VID: 00ab\n  PID: 1234\n  Fabricante: Fabricante \"Teste\"\n  Produto: Sensor\nCOM2 (Desconhecida)\n");
+    }
+
+    #[test]
+    fn shared_core_classification_reaches_cli_text_and_json_without_inference() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tests/fixtures/serial-ports.json"))
+                .unwrap();
+        let ports: Vec<_> = fixture
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|port| SerialPortInfo {
+                port_name: port["port_name"].as_str().unwrap().into(),
+                port_type: port["port_type"].as_str().unwrap().into(),
+                vid: port["vid"].as_str().unwrap().into(),
+                pid: port["pid"].as_str().unwrap().into(),
+                manufacturer: port["manufacturer"].as_str().unwrap().into(),
+                product: port["product"].as_str().unwrap().into(),
+            })
+            .collect();
+        let (mut json, mut text) = (Vec::new(), Vec::new());
+        write_ports(&ports, true, &mut json).unwrap();
+        write_ports(&ports, false, &mut text).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&json).unwrap(),
+            fixture
+        );
+        let text = String::from_utf8(text).unwrap();
+        for label in [
+            "COM3 (Desconhecida)",
+            "COM7 (USB)",
+            "COM16 (Bluetooth)",
+            "COM2 (Native)",
+        ] {
+            assert!(text.contains(label), "{text}");
+        }
+        assert!(!text.contains("Virtual"));
+    }
+
+    #[test]
+    fn available_description_does_not_override_unknown_classification() {
+        for description in [
+            "Intel(R) Active Management Technology - SOL",
+            "Virtual Serial Port",
+            "Standard serial link over Bluetooth",
+        ] {
+            let mut port = sample();
+            port.port_type = "Unknown".into();
+            port.product = description.into();
+            let mut out = Vec::new();
+            write_ports(&[port], false, &mut out).unwrap();
+            let text = String::from_utf8(out).unwrap();
+            assert!(text.starts_with("COM7 (Desconhecida)\n"));
+            assert!(text.contains(description));
+        }
     }
 
     #[test]

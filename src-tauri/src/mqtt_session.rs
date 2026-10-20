@@ -40,8 +40,9 @@ pub struct Snapshot {
 pub struct Message {
     pub session_id: u64,
     pub sequence: u64,
+    pub state_revision: u64,
     pub topic: String,
-    pub payload: String,
+    pub payload_bytes: Vec<u8>,
     pub qos: u8,
 }
 
@@ -51,7 +52,7 @@ pub enum Notice {
 }
 pub enum Incoming {
     ConnAck(bool),
-    Message(String, String, u8),
+    Message(String, Vec<u8>, u8),
     Closed,
     Other,
 }
@@ -65,11 +66,9 @@ impl Events for EventLoop {
                 Event::Incoming(Packet::ConnAck(ack)) => Ok(Incoming::ConnAck(
                     ack.code == rumqttc::ConnectReturnCode::Success,
                 )),
-                Event::Incoming(Packet::Publish(p)) => Ok(Incoming::Message(
-                    p.topic,
-                    String::from_utf8_lossy(&p.payload).into_owned(),
-                    p.qos as u8,
-                )),
+                Event::Incoming(Packet::Publish(p)) => {
+                    Ok(Incoming::Message(p.topic, p.payload.to_vec(), p.qos as u8))
+                }
                 Event::Outgoing(rumqttc::Outgoing::Disconnect) => Ok(Incoming::Closed),
                 _ => Ok(Incoming::Other),
             }
@@ -330,7 +329,7 @@ impl MqttService {
         Self::emit_state(&mut inner);
         true
     }
-    fn message(&self, id: u64, topic: String, payload: String, qos: u8) {
+    fn message(&self, id: u64, topic: String, payload_bytes: Vec<u8>, qos: u8) {
         let mut inner = self.0.inner.lock().unwrap();
         if inner.shutting_down
             || inner.snapshot.session_id != id
@@ -342,8 +341,9 @@ impl MqttService {
         (inner.notify)(Notice::Message(Message {
             session_id: id,
             sequence: inner.sequence,
+            state_revision: inner.snapshot.revision,
             topic,
-            payload,
+            payload_bytes,
             qos,
         }));
     }

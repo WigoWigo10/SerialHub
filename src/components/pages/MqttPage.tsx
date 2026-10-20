@@ -35,13 +35,8 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useMqttSessionStore } from "../../stores/mqttSessionStore";
 import { mqttCommands } from "../../lib/mqttCommands";
 import { mqttOperation } from "../../lib/mqttSession";
+import { MQTT_LIMITS, mqttTopicFits } from "../../lib/mqttLimits";
 import { MqttTransport, mqttTransports, isSecureTransport, mqttConfigurationError } from "../../lib/mqttTransport";
-
-interface ChartDataPoint {
-  time: string;
-  value: number;
-  originalTime: number;
-}
 
 const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6"];
 
@@ -146,8 +141,15 @@ export function MqttPage() {
   const reserving = useMqttSessionStore(state => state.reserving);
   const isConnected = mqttSnapshot.status === 'connected';
   const isConnecting = reserving || mqttSnapshot.status === 'connecting' || mqttSnapshot.status === 'stopping';
-  const messages = useMqttSessionStore(state => state.messages);
-  const processedMessages = useRef(0);
+  const tree = useMqttSessionStore(state => state.tree);
+  const monitor = useMqttSessionStore(state => state.monitor);
+  const charts = useMqttSessionStore(state => state.charts);
+  const discards = useMqttSessionStore(state => state.discards);
+  const historyCount = useMqttSessionStore(state => state.messages.length);
+  const historyBytes = useMqttSessionStore(state => state.historyBytes);
+  const latestCount = useMqttSessionStore(state => state.latest.size);
+  const latestBytes = useMqttSessionStore(state => state.latestBytes);
+  const chartTopics = [...charts.keys()];
 
   // Subscrições e Publish
   const [subTopic, setSubTopic] = useState("serialhub/#");
@@ -168,12 +170,6 @@ export function MqttPage() {
 
   // Estado para WebSockets
   const useWebsockets = transport === 'ws' || transport === 'wss';
-
-  // Gráficos
-  const [chartTopics, setChartTopics] = useState<string[]>([]);
-  const [chartHistory, setChartHistory] = useState<
-    Record<string, ChartDataPoint[]>
-  >({});
 
   const openLwtModal = () => {
     lwtBackupRef.current = { topic: lwtTopic, payload: lwtPayload, qos: lwtQos, retain: lwtRetain, profileName: activeProfileName };
@@ -385,59 +381,6 @@ export function MqttPage() {
     if (activeProfileName) setActiveProfileName(null);
   };
 
-  // --- LISTENERS DE EVENTOS (MENSAGENS E STATUS) ---
-  useEffect(() => {
-    const start = processedMessages.current > messages.length ? 0 : processedMessages.current;
-    const fresh = messages.slice(start);
-    processedMessages.current = messages.length;
-    fresh.forEach(message => {
-      const event = { payload: message };
-      const now = new Date(message.receivedAt);
-      const timeStr = message.timestamp;
-      const topic = message.topic;
-      setChartHistory((prevHistory) => {
-        const newHistory: typeof prevHistory = Object.assign(Object.create(null), prevHistory);
-        let changed = false;
-
-        // Tópico MQTT direto
-        if (Object.prototype.hasOwnProperty.call(prevHistory, topic)) {
-          const val = parseFloat(event.payload.payload);
-          if (!isNaN(val)) {
-            newHistory[topic] = [...(prevHistory[topic] || []), {
-              time: timeStr, value: val, originalTime: now.getTime(),
-            }].slice(-100);
-            changed = true;
-          }
-        }
-
-        // Campos JSON: chaves no formato "topico/mqtt.campo.aninhado"
-        const jsonPrefix = `${topic}.`;
-        Object.keys(prevHistory).forEach(key => {
-          if (!key.startsWith(jsonPrefix)) return;
-          const fieldPath = key.slice(jsonPrefix.length);
-          try {
-            const json = JSON.parse(event.payload.payload);
-            const parts = fieldPath.split('.');
-            let fieldVal: any = json;
-            for (const part of parts) {
-              if (fieldVal == null || typeof fieldVal !== 'object' || !Object.prototype.hasOwnProperty.call(fieldVal, part)) { fieldVal = undefined; break; }
-              fieldVal = fieldVal[part];
-            }
-            const numVal = parseFloat(String(fieldVal));
-            if (fieldVal !== undefined && !isNaN(numVal)) {
-              newHistory[key] = [...(prevHistory[key] || []), {
-                time: timeStr, value: numVal, originalTime: now.getTime(),
-              }].slice(-100);
-              changed = true;
-            }
-          } catch { /* payload não é JSON válido */ }
-        });
-
-        return changed ? newHistory : prevHistory;
-      });
-    });
-  }, [messages]);
-
   const handleConnectToggle = async () => {
     const state = useMqttSessionStore.getState();
     if (state.reserving || state.snapshot.status === 'connecting' || state.snapshot.status === 'stopping') return;
@@ -471,7 +414,8 @@ export function MqttPage() {
   };
 
   const handleSubscribe = async () => {
-    if (!isConnected) return;
+    if (!isConnected || monitor.phase !== 'live') return;
+    if (!mqttTopicFits(subTopic) || activeSubs.length >= MQTT_LIMITS.subscriptions) return toast.error(t('mqtt_subscription_limit'));
     if (activeSubs.includes(subTopic))
       return toast(t('mqtt_warn_already_sub'), { icon: "ℹ️" });
       
@@ -501,7 +445,7 @@ export function MqttPage() {
   };
 
   const handlePublish = async () => {
-    if (!isConnected) return;
+    if (!isConnected || monitor.phase !== 'live') return;
     try {
       const id = useMqttSessionStore.getState().snapshot.session_id;
       await mqttOperation(id, () => useMqttSessionStore.getState().snapshot, () => invoke("publish_mqtt", {
@@ -520,69 +464,17 @@ export function MqttPage() {
     }
   };
 
-  const handleAddToChart = (topic: string) => {
-    if (chartTopics.includes(topic))
-      return toast(t('mqtt_warn_already_chart'), { icon: "📊" });
-
-    if (chartTopics.length >= 3) return toast.error(t('mqtt_warn_max_charts'));
-
-    setChartTopics((prev) => [...prev, topic]);
-    setChartHistory((prev) => {
-      if (Object.prototype.hasOwnProperty.call(prev, topic) && prev[topic].length > 0) return prev;
-
-      let initialData: ChartDataPoint[] = [];
-
-      // Tópico MQTT direto
-      const lastDirectMsg = [...messages].reverse().find((m) => m.topic === topic);
-      if (lastDirectMsg) {
-        const val = parseFloat(lastDirectMsg.payload);
-        if (!isNaN(val))
-          initialData = [{ time: lastDirectMsg.timestamp, value: val, originalTime: Date.now() }];
-      } else {
-        // Campo JSON: busca a mensagem pai cujo tópico é prefixo de "topic."
-        const parentMsg = [...messages].reverse().find((m) => topic.startsWith(`${m.topic}.`));
-        if (parentMsg) {
-          const fieldPath = topic.slice(parentMsg.topic.length + 1);
-          try {
-            const json = JSON.parse(parentMsg.payload);
-            const parts = fieldPath.split('.');
-            let fieldVal: any = json;
-            for (const part of parts) {
-              if (fieldVal == null || typeof fieldVal !== 'object' || !Object.prototype.hasOwnProperty.call(fieldVal, part)) { fieldVal = undefined; break; }
-              fieldVal = fieldVal[part];
-            }
-            const numVal = parseFloat(String(fieldVal));
-            if (fieldVal !== undefined && !isNaN(numVal))
-              initialData = [{ time: parentMsg.timestamp, value: numVal, originalTime: Date.now() }];
-          } catch { /* payload inválido */ }
-        }
-      }
-
-      return { ...prev, [topic]: initialData };
-    });
-    toast.success(`${t('mqtt_msg_chart_added')}${topic}`, { icon: "📈" });
-  };
-
   const handleStopChart = (topic: string) => {
-    setChartTopics((prev) => prev.filter((t) => t !== topic));
-    setChartHistory((prev) => {
-      const newHist = { ...prev };
-      delete newHist[topic];
-      return newHist;
-    });
+    useMqttSessionStore.getState().removeChart(topic);
     toast.success(`${t('mqtt_msg_chart_stopped')}${topic}`);
   };
-  
-  const handleHideChart = (topic: string) => {
-    setChartTopics((prev) => prev.filter((t) => t !== topic));
-  };
-  
+  const handleHideChart = (topic: string) => useMqttSessionStore.getState().removeChart(topic);
   const handleToggleChart = (topic: string) => {
-    if (chartTopics.includes(topic)) {
-      handleHideChart(topic);
-      return;
+    const state = useMqttSessionStore.getState();
+    if (state.charts.has(topic)) { state.removeChart(topic); return; }
+    if (!state.addChart(topic)) {
+      toast.error(t(state.charts.size >= MQTT_LIMITS.charts ? 'mqtt_warn_max_charts' : 'mqtt_chart_unavailable'));
     }
-    handleAddToChart(topic);
   };
 
   const isAlreadySubscribed = activeSubs.includes(subTopic);
@@ -754,7 +646,7 @@ export function MqttPage() {
               />
               <button
                 onClick={handleSubscribe}
-                disabled={!isConnected || isAlreadySubscribed}
+                disabled={!isConnected || monitor.phase !== 'live' || isAlreadySubscribed}
                 title={isAlreadySubscribed ? t('mqtt_warn_already_sub') : t('mqtt_tooltip_sub')}
                 className={`p-2 rounded border transition-all ${
                   isAlreadySubscribed
@@ -823,7 +715,7 @@ export function MqttPage() {
             
             <button
               onClick={handlePublish}
-              disabled={!isConnected}
+              disabled={!isConnected || monitor.phase !== 'live'}
               className="w-full py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm font-bold shadow-sm"
             >
               {t('mqtt_send_btn')}
@@ -872,11 +764,7 @@ export function MqttPage() {
                 </div>
 
                 <button
-                  onClick={() => {
-                    useMqttSessionStore.getState().clearMessages();
-                    processedMessages.current = 0;
-                    setChartHistory({});
-                  }}
+                  onClick={() => useMqttSessionStore.getState().clearMessages()}
                   className="p-1.5 hover:bg-red-100 text-slate-400 hover:text-red-500 rounded transition-colors"
                   title={t('mqtt_tooltip_clear_history')}
                 >
@@ -885,10 +773,31 @@ export function MqttPage() {
               </div>
             </div>
 
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-200 px-3 py-2 text-[10px] text-slate-500 dark:border-slate-800 dark:text-slate-400" aria-label={t('mqtt_retention')}>
+              <span>{t('mqtt_history')}: {historyCount}/{MQTT_LIMITS.historyMessages} | {historyBytes}/{MQTT_LIMITS.historyBytes} B</span>
+              <span>{t('mqtt_latest')}: {latestCount}/{MQTT_LIMITS.latestTopics} | {latestBytes}/{MQTT_LIMITS.latestBytes} B</span>
+              <span title={t('mqtt_discards_help')}>{t('mqtt_discards')}: {t('mqtt_history')} {discards.history} | {t('mqtt_latest')} {discards.topics} | {t('mqtt_payload_rejected')} {discards.payloads} | {t('mqtt_topic_rejected')} {discards.topicShape}</span>
+              <button type="button" onClick={() => useMqttSessionStore.getState().clearLatest()} className="ml-auto underline hover:text-red-500">{t('mqtt_clear_latest')}</button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2 text-[10px] text-slate-500 dark:border-slate-800 dark:text-slate-400" aria-label={t('mqtt_sync_label')}>
+              <span title={monitor.error ?? undefined}>{t('mqtt_sync_label')}: {t(`mqtt_sync_${monitor.phase}`)}</span>
+              <span>{t('mqtt_sync_queue')}: {monitor.queuedMessages}/{MQTT_LIMITS.syncMessages} | {monitor.queuedBytes}/{MQTT_LIMITS.syncBytes} B</span>
+              <details>
+                <summary className="cursor-pointer">{t('mqtt_sync_drops')}: {Object.values(monitor.drops).reduce((sum, count) => Math.min(Number.MAX_SAFE_INTEGER, sum + count), 0)}</summary>
+                <p>{t('mqtt_sync_capacity')} {monitor.drops.capacity} | {t('mqtt_payload_rejected')} {monitor.drops.oversize} | {t('mqtt_sync_obsolete')} {monitor.drops.obsolete} | {t('mqtt_sync_duplicate')} {monitor.drops.duplicate} | {t('mqtt_sync_invalid')} {monitor.drops.invalid} | {t('mqtt_sync_closed')} {monitor.drops.closed}</p>
+              </details>
+              {monitor.phase === 'failed' && <>
+                <span role="alert" className="text-red-600 dark:text-red-400">{t('mqtt_sync_failed_help')}</span>
+                <button type="button" onClick={() => useMqttSessionStore.getState().restartMonitor()} className="underline font-bold">{t('mqtt_sync_retry')}</button>
+                {isConnecting && <button type="button" onClick={handleCancelConnection} className="underline">{t('mqtt_cancel_connection')}</button>}
+              </>}
+            </div>
+
             <div className="flex-1 p-2 overflow-hidden relative">
               {/* ÁRVORE DE TÓPICOS */}
               <TopicTree
-                messages={messages}
+                tree={tree}
                 onToggleChart={handleToggleChart}
                 recordedTopics={chartTopics}
                 viewMode={viewMode}
@@ -904,7 +813,7 @@ export function MqttPage() {
                 <MqttChart
                   key={`${topic}-${theme}`} 
                   topic={topic}
-                  data={Object.prototype.hasOwnProperty.call(chartHistory, topic) ? chartHistory[topic] : []}
+                  data={charts.get(topic)?.samples ?? []}
                   color={CHART_COLORS[index % CHART_COLORS.length]}
                   onClose={() => handleHideChart(topic)}
                   onStop={() => handleStopChart(topic)}
@@ -916,7 +825,7 @@ export function MqttPage() {
       </div>
 
       {/* --- OVERLAY DE BLOQUEIO (LOADING) --- */}
-      {isConnecting && (
+      {isConnecting && monitor.phase !== 'failed' && (
         <div className="absolute inset-0 z-50 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300 cursor-wait">
           
           {/* Card Central do Loading */}

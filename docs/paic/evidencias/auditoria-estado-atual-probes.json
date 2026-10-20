@@ -1,0 +1,19 @@
+{
+  "sensor/temperature": {
+    "error": null,
+    "objectPrototypeModified": false
+  },
+  "__proto__": {
+    "error": "Cannot convert undefined or null to object",
+    "objectPrototypeModified": true
+  },
+  "constructor": {
+    "error": "Cannot convert undefined or null to object",
+    "objectPrototypeModified": false
+  },
+  "hex": {
+    "text": "é",
+    "actual": "E9",
+    "expectedUtf8Bytes": "C3 A9"
+  }
+}

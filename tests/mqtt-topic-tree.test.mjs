@@ -6,25 +6,13 @@ import ts from 'typescript';
 
 // Execute the production functions, not a duplicate tree implementation.
 const source = await readFile(new URL('../src/components/mqtt/TopicTree.tsx', import.meta.url), 'utf8');
-const pureSource = source.slice(source.indexOf('const childDictionary'), source.indexOf('const TreeNodeItem'));
-assert.ok(pureSource.includes('const buildTree') && pureSource.includes('const processJsonToTree'));
+const pureSource = await readFile(new URL('../src/lib/mqttTree.ts', import.meta.url), 'utf8');
 const compile = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
-const code = compile(pureSource);
-const page = await readFile(new URL('../src/components/pages/MqttPage.tsx', import.meta.url), 'utf8');
-const pageAst = ts.createSourceFile('MqttPage.tsx', page, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const historyUpdaters = [];
-function visit(node) {
-  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)
-      && node.expression.text === 'setChartHistory' && ts.isArrowFunction(node.arguments[0])) {
-    historyUpdaters.push(node.arguments[0].getText(pageAst));
-  }
-  ts.forEachChild(node, visit);
-}
-visit(pageAst);
-assert.ok(historyUpdaters[0].includes('prevHistory') && historyUpdaters[1].includes('initialData'));
+const modules = await Promise.all(['mqttPayload', 'mqttLimits', 'mqttTree', 'mqttRetention'].map(name => readFile(new URL(`../src/lib/${name}.ts`, import.meta.url), 'utf8')));
+const code = compile(modules.map(text => text.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '')).join('\n'));
 
 function isolated(check) {
-  const context = vm.createContext({});
+  const context = vm.createContext({ TextDecoder, TextEncoder });
   const descriptors = () => vm.runInContext('[Object.getOwnPropertyDescriptors(Object.prototype), Object.getOwnPropertyDescriptors(Function.prototype)]', context);
   const before = descriptors();
   const hostBefore = Object.getOwnPropertyDescriptors(Object.prototype);
@@ -36,7 +24,7 @@ function isolated(check) {
     assert.deepEqual(Object.getOwnPropertyDescriptors(Object.prototype), hostBefore, 'host prototype must remain unchanged');
   }
 }
-const msg = (topic, payload = '42', timestamp = 'T') => ({ topic, payload, timestamp });
+const msg = (topic, payload = '42', timestamp = 'T') => ({ topic, payload, payload_bytes: [...new TextEncoder().encode(payload)], payloadIsUtf8: true, timestamp });
 const names = ['__proto__', 'proto', 'constructor', 'prototype', 'toString', 'hasOwnProperty'];
 function verifyDictionaries(node) {
   assert.equal(Object.getPrototypeOf(node.children), null);
@@ -84,7 +72,7 @@ test('empty levels keep leading, trailing and consecutive slashes in fullName', 
 }));
 
 test('received names cannot overwrite node metadata or child dictionaries', () => isolated(({ buildTree }) => {
-  const internalNames = ['name', 'fullName', 'children', 'jsonChildren', 'value', 'originalValue', 'timestamp', 'isJson', 'isVirtual'];
+  const internalNames = ['name', 'fullName', 'children', 'jsonChildren', 'value', 'originalValue', 'originalBytes', 'payloadIsUtf8', 'jsonTruncated', 'jsonSource', 'timestamp', 'isJson', 'isVirtual'];
   const payload = JSON.stringify(Object.fromEntries(internalNames.map(name => [name, { [name]: 5 }])));
   const tree = buildTree([msg('data', payload), ...internalNames.map(name => msg(`data/${name}`, 'topic'))]);
   const node = tree.children.data;
@@ -153,46 +141,24 @@ test('numeric-looking keys retain names and renderer traversal includes both nam
   verifyDictionaries(node);
 }));
 
-test('chart consumers ignore inherited history and preserve literal own keys when appending', () => isolated((_, context) => {
-  vm.runInContext(compile(`const initial = ${historyUpdaters[1]}; const receive = ${historyUpdaters[0]};`), context);
-  for (const topic of names) {
-    context.topic = topic;
-    context.messages = [msg(topic, '1')];
-    context.event = { payload: { topic, payload: '2' } };
-    context.timeStr = 'T'; context.now = new Date(0);
-    const check = vm.runInContext(`(() => {
-      const empty = receive({});
-      if (Object.hasOwn(empty, topic)) throw new Error('inherited topic treated as recorded');
-      const history = receive(initial({}));
-      return Object.hasOwn(history, topic) && history[topic].length === 2 && history[topic][1].value === 2;
-    })()`, context);
-    assert.equal(check, true, topic);
-  }
-}));
-
-test('chart JSON traversal uses only own fields, including explicit __proto__ fields', () => isolated((_, context) => {
-  context.timeStr = 'T'; context.now = new Date(0);
-  vm.runInContext(compile(`const receive = ${historyUpdaters[0]}; const initial = ${historyUpdaters[1]};`), context);
+test('chart consumers preserve literal own keys and ignore inherited JSON fields', () => isolated((_, context) => {
   for (const name of names) {
-    const fieldTopic = `sensor.${name}.value`;
-    context.topic = 'sensor';
-    context.event = { payload: { topic: 'sensor', payload: JSON.stringify({ [name]: { value: 9 } }) } };
-    context.history = { [fieldTopic]: [] };
-    const result = vm.runInContext('receive(history)', context);
-    assert.equal(result[fieldTopic][0].value, 9);
-    context.messages = [msg('sensor', context.event.payload.payload)];
-    context.topic = fieldTopic;
-    const initial = vm.runInContext('initial({})', context);
-    assert.equal(initial[fieldTopic][0].value, 9);
+    context.name = name;
+    const result = vm.runInContext(`(() => {
+      let state = retainMqttMessage(emptyMqttRetention(), {topic: name, payload_bytes: [52,50], session_id: 1, sequence: 1, qos: 0});
+      state.charts = addMqttChart(state, name);
+      state = retainMqttMessage(state, {topic: name, payload_bytes: [50], session_id: 1, sequence: 2, qos: 0});
+      return state.charts.get(name).samples.map(p => p.value).join(',');
+    })()`, context);
+    assert.equal(result, '42,2');
+    context.jsonText = JSON.stringify({ [name]: { value: 9 } });
+    assert.equal(vm.runInContext('chartValue({payload: jsonText, payloadIsUtf8: true}, [name, "value"])', context), 9);
   }
-  context.topic = 'sensor';
-  context.event = { payload: { topic: 'sensor', payload: '{}' } };
-  const inherited = vm.runInContext(`receive({['sensor.constructor.prototype']: []})`, context);
-  assert.equal(inherited['sensor.constructor.prototype'].length, 0);
+  assert.equal(vm.runInContext('chartValue({payload: "{}", payloadIsUtf8: true}, ["constructor", "prototype"])', context), undefined);
 }));
 
 test('renderer uses combined children and namespace-aware keys at both levels (static wiring)', () => {
   assert.equal((source.match(/key=\{treeNodeKey\(child\)\}/g) || []).length, 2);
-  assert.ok(source.includes('const children = treeChildren(node)'));
-  assert.ok(source.includes('const children = treeChildren(tree)'));
+  assert.ok(source.includes('const children = treeChildren(node, viewMode)'));
+  assert.ok(source.includes('const children = treeChildren(tree, viewMode)'));
 });

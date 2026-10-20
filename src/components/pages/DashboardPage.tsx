@@ -130,9 +130,7 @@ export function DashboardPage() {
     activePort, 
     connectionStartTime,
     txBytes,
-    rxBytes,
-    addRxBytes,
-    addTxBytes
+    rxBytes
   } = useSettingsStore(
     useShallow((state) => ({
       connected: state.connected,
@@ -140,8 +138,6 @@ export function DashboardPage() {
       connectionStartTime: state.connectionStartTime,
       txBytes: state.txBytes,
       rxBytes: state.rxBytes,
-      addRxBytes: state.addRxBytes,
-      addTxBytes: state.addTxBytes,
     })),
   );
   
@@ -190,17 +186,6 @@ export function DashboardPage() {
     }
     return () => clearInterval(interval);
   }, [connected, connectionStartTime]);
-
-  useEffect(() => {
-    const unlistenTx = listen<any>("serial-sent", (event) => {
-      const len = event.payload.length || 0;
-      addTxBytes(len);
-    });
-
-    return () => { 
-      unlistenTx.then(f => f()); 
-    };
-  }, [addRxBytes, addTxBytes]);
 
   const formatDataSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;

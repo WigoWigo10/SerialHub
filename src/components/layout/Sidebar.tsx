@@ -1,12 +1,12 @@
 import { useShallow } from "zustand/react/shallow";
 import { save } from "@tauri-apps/plugin-dialog";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   RefreshCw,
   Usb,
-  Monitor,
+  HelpCircle,
   Unplug,
   SlidersHorizontal,
   Circle,
@@ -18,41 +18,35 @@ import {
 } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
-
-interface SerialPort {
-  port_name: string;
-  port_type: string;
-  vid: string;
-  pid: string;
-  manufacturer: string;
-  product: string;
-}
+import { connectionAction, recordingAction, toggleRecording } from "../../lib/serialActions";
+import { listenSafely } from "../../lib/serialPresentation";
+import toast from "react-hot-toast";
+import { SerialPortInfo as SerialPort, serialPortPresentation } from "../../lib/serialPorts";
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
 
 function portIcon(type: string) {
   if (type === "USB")       return <Usb size={18} />;
   if (type === "Bluetooth") return <Bluetooth size={18} />;
-  if (type === "Virtual")   return <Cpu size={18} />;
-  return <Monitor size={18} />;
+  if (type === "Native")    return <Cpu size={18} />;
+  return <HelpCircle size={18} />;
 }
 
-function PortButton({ port, activePort, onConnect, t }: {
+function PortButton({ port, activePort, onConnect, t, disabled }: {
+  disabled?: boolean;
   port: SerialPort;
   activePort: string | null;
   onConnect: (name: string) => void;
   t: (key: any) => string;
 }) {
   const isActive = activePort === port.port_name;
-  const tooltip = port.port_type === "USB"
-    ? `${t("product")}: ${port.product}\n${t("manufacturer")}: ${port.manufacturer}\nVID: ${port.vid} | PID: ${port.pid}`
-    : t("serial_native");
+  const presentation = serialPortPresentation(port, t);
 
   return (
     <button
       onClick={() => onConnect(port.port_name)}
-      disabled={isActive}
-      title={tooltip}
+      disabled={isActive || disabled}
+      title={presentation.tooltip}
       className={`w-full text-left p-2 rounded-md group transition-all flex items-center gap-3 border mb-1
         ${isActive
           ? "bg-emerald-50 border-emerald-200 dark:bg-green-500/10 dark:border-green-500/50"
@@ -80,13 +74,13 @@ function PortButton({ port, activePort, onConnect, t }: {
           )}
         </div>
 
-        <div className="text-[10px] text-slate-500 truncate" title={port.product || port.port_type}>
+        <div className="text-[10px] text-slate-500 truncate" title={presentation.description}>
           {isActive ? (
             <span className="text-emerald-600 dark:text-green-500 font-medium animate-pulse">
               ● {t("connected_status")}
             </span>
           ) : (
-            port.product || port.port_type
+            presentation.description
           )}
         </div>
       </div>
@@ -99,14 +93,15 @@ export function Sidebar() {
 
   const [ports, setPorts] = useState<SerialPort[]>([]);
   const [scanning, setScanning] = useState(false);
-  const [selectedBaud, setSelectedBaud] = useState(115200);
+  const parameters = useSettingsStore(state => state.serialParameters);
+  const serialOperationPending = useSettingsStore(state => state.serialOperationPending);
+  const recordingOperationPending = useSettingsStore(state => state.recordingOperationPending);
+  const { baud: selectedBaud, data: dataBits, stop: stopBits, parity, flow: flowControl } = parameters;
+  const mounted = useRef(true);
+  const scanVersion = useRef(0);
 
   const [advancedMode, setAdvancedMode] = useState(false);
   const [showOtherPorts, setShowOtherPorts] = useState(false);
-  const [dataBits, setDataBits] = useState(8);
-  const [stopBits, setStopBits] = useState(1);
-  const [parity, setParity] = useState("None");
-  const [flowControl, setFlowControl] = useState("None");
 
   const {
     viewMode,
@@ -114,7 +109,6 @@ export function Sidebar() {
     showTimestamp,
     toggleTimestamp,
     isRecording,
-    setRecording,
     activePort,
   } = useSettingsStore(
     useShallow((state) => ({
@@ -123,117 +117,70 @@ export function Sidebar() {
       showTimestamp: state.showTimestamp,
       toggleTimestamp: state.toggleTimestamp,
       isRecording: state.isRecording,
-      setRecording: state.setRecording,
       activePort: state.activePort,
     })),
   );
 
   const handleToggleRecord = async () => {
-    if (isRecording) {
-      try {
-        await invoke("stop_recording");
-        setRecording(false);
-      } catch (error) {
-        console.error("Erro ao parar:", error);
-      }
-    } else {
-      try {
-        const path = await save({
-          filters: [{ name: "Log File", extensions: ["txt", "log"] }],
-          defaultPath: "serial_log.txt",
+    try {
+      await recordingAction(async () => {
+        const result = await toggleRecording({
+          active: () => useSettingsStore.getState().isRecording,
+          choose: () => save({ filters: [{ name: "Serial diagnostic log", extensions: ["log"] }], defaultPath: "serial_log.log" }),
+          start: filePath => invoke("start_recording", { filePath }),
+          stop: () => invoke("stop_recording"),
         });
-        if (path) {
-          await invoke("start_recording", { filePath: path });
-          setRecording(true);
-        }
-      } catch (error) {
-        console.error("Erro ao salvar:", error);
-      }
-    }
+        if (result !== 'cancelled') toast.success(t(result === 'started' ? 'serial_record_started' : 'serial_record_stopped'));
+      }, value => useSettingsStore.setState({ recordingOperationPending: value }));
+    } catch (error) { toast.error(String(error), { id: 'serial-recording-error' }); }
   };
 
   const scanPorts = async () => {
+    const version = ++scanVersion.current;
     setScanning(true);
     try {
       const result = await invoke<SerialPort[]>("list_ports");
-      setPorts(result);
-    } catch (err) {
-      console.error(err);
+      if (mounted.current && version === scanVersion.current) setPorts(result);
+    } catch (error) {
+      if (mounted.current && version === scanVersion.current) toast.error(String(error));
     } finally {
-      setTimeout(() => setScanning(false), 500);
+      if (mounted.current && version === scanVersion.current) setScanning(false);
     }
   };
 
   useEffect(() => {
-    scanPorts();
+    mounted.current = true;
+    void scanPorts();
+    const stop = listenSafely(receive => listen("ports-changed", receive), () => { void scanPorts(); });
+    return () => { mounted.current = false; scanVersion.current++; stop(); };
   }, []);
 
-  useEffect(() => {
-    const unlistenPorts = listen("ports-changed", () =>
-      setTimeout(() => scanPorts(), 500),
-    );
-    return () => {
-      unlistenPorts.then((f) => f());
-    };
-  }, []);
-
+  const open = (portName: string, config: typeof parameters) => invoke("open_port", {
+    portName, baudRate: config.baud, dataBits: config.data, stopBits: config.stop,
+    parity: config.parity, flowControl: config.flow,
+  });
   const handleConnect = async (portName: string) => {
     try {
-      window.dispatchEvent(new Event("terminal:clear"));
-      await invoke("open_port", {
-        portName,
-        baudRate: Number(selectedBaud),
-        dataBits: Number(dataBits),
-        stopBits: Number(stopBits),
-        parity,
-        flowControl,
-      });
-    } catch (error) {
-      alert(`${t("alert_error_prefix")} ${error}`);
-    }
+      await connectionAction(() => open(portName, useSettingsStore.getState().serialParameters),
+        value => useSettingsStore.setState({ serialOperationPending: value }));
+    } catch (error) { toast.error(`${t('alert_error_prefix')} ${error}`); }
   };
-
   const handleDisconnect = async () => {
     try {
-      await invoke("close_port");
-    } catch (e) {
-      console.error(e);
-    }
+      await connectionAction(() => invoke("close_port"), value => useSettingsStore.setState({ serialOperationPending: value }));
+    } catch (error) { toast.error(String(error)); }
   };
-
-  const handleBaudChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newRate = Number(e.target.value);
-    setSelectedBaud(newRate);
-    updateConnection({ baud: newRate });
-  };
-
-  const updateConnection = async (overrides: {
-    baud?: number;
-    data?: number;
-    stop?: number;
-    parity?: string;
-    flow?: string;
-  }) => {
-    // Se não tiver porta ativa, não faz nada de rede, só atualiza estado visual (feito fora daqui)
-    if (!activePort) return;
-
-    console.log("Atualizando configurações da porta...");
-
+  const updateConnection = async (overrides: Partial<typeof parameters>) => {
     try {
-      await invoke("open_port", {
-        portName: activePort,
-        // Usa o valor do override SE existir, senão usa o do estado atual
-        baudRate: overrides.baud ?? selectedBaud,
-        dataBits: overrides.data ?? dataBits,
-        stopBits: overrides.stop ?? stopBits,
-        parity: overrides.parity ?? parity,
-        flowControl: overrides.flow ?? flowControl,
-      });
-    } catch (error) {
-      console.error("Erro ao atualizar config:", error);
-      alert(`${t("alert_error_prefix")} ${error}`);
-    }
+      await connectionAction(async () => {
+        const state = useSettingsStore.getState();
+        const next = { ...state.serialParameters, ...overrides };
+        if (state.activePort) await open(state.activePort, next);
+        useSettingsStore.setState({ serialParameters: next });
+      }, value => useSettingsStore.setState({ serialOperationPending: value }));
+    } catch (error) { toast.error(`${t('alert_error_prefix')} ${error}`); }
   };
+  const handleBaudChange = (event: React.ChangeEvent<HTMLSelectElement>) => { void updateConnection({ baud: Number(event.target.value) }); };
 
   const inputClass =
     "w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs rounded-md pl-2 pr-2 py-1 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-colors";
@@ -283,7 +230,7 @@ export function Sidebar() {
             <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-blue-500 transition-colors pointer-events-none">
               <Gauge size={14} />
             </div>
-            <select
+            <select disabled={serialOperationPending}
               value={selectedBaud}
               onChange={handleBaudChange}
               className={`${inputClass} pl-9 pr-8 py-2 font-mono cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 appearance-none`}
@@ -340,6 +287,8 @@ export function Sidebar() {
               <div className="pt-2 border-t border-slate-200 dark:border-slate-800/50">
                 <button
                   onClick={handleToggleRecord}
+                  disabled={recordingOperationPending}
+                  title={t("serial_record_help")}
                   className={`w-full py-2 rounded-md flex items-center justify-center gap-2 text-xs font-bold transition-all border
                             ${
                               isRecording
@@ -353,16 +302,16 @@ export function Sidebar() {
                   />
                   {isRecording ? t("recording") : t("record_log")}
                 </button>
+                <p className="text-[10px] leading-relaxed text-slate-500 mt-2">{t("serial_record_help")}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className={labelClass}>{t("data_bits")}</label>
-                  <select
+                  <select disabled={serialOperationPending}
                     value={dataBits}
                     onChange={(e) => {
                       const val = Number(e.target.value);
-                      setDataBits(val);
                       updateConnection({ data: val });
                     }}
                     className={inputClass}
@@ -373,11 +322,10 @@ export function Sidebar() {
                 </div>
                 <div className="space-y-1">
                   <label className={labelClass}>{t("stop_bits")}</label>
-                  <select
+                  <select disabled={serialOperationPending}
                     value={stopBits}
                     onChange={(e) => {
                       const val = Number(e.target.value);
-                      setStopBits(val);
                       updateConnection({ stop: val });
                     }}
                     className={inputClass}
@@ -389,11 +337,10 @@ export function Sidebar() {
 
                 <div className="space-y-1">
                   <label className={labelClass}>{t("parity")}</label>
-                  <select
+                  <select disabled={serialOperationPending}
                     value={parity}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setParity(val);
                       updateConnection({ parity: val });
                     }}
                     className={inputClass}
@@ -406,11 +353,10 @@ export function Sidebar() {
 
                 <div className="space-y-1">
                   <label className={labelClass}>{t("flow")}</label>
-                  <select
+                  <select disabled={serialOperationPending}
                     value={flowControl}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setFlowControl(val);
                       updateConnection({ flow: val });
                     }}
                     className={inputClass}
@@ -443,13 +389,13 @@ export function Sidebar() {
           <PortButton
             key={port.port_name}
             port={port}
-            activePort={activePort}
+            activePort={activePort} disabled={serialOperationPending}
             onConnect={handleConnect}
             t={t}
           />
         ))}
 
-        {/* Other Ports (Native / Virtual / Bluetooth) */}
+        {/* Other Ports (Native / Unknown / Bluetooth; legacy labels preserved) */}
         {ports.filter(p => p.port_type !== "USB").length > 0 && (
           <div className="mt-2">
             <button
@@ -475,7 +421,7 @@ export function Sidebar() {
                     <PortButton
                       key={port.port_name}
                       port={port}
-                      activePort={activePort}
+                      activePort={activePort} disabled={serialOperationPending}
                       onConnect={handleConnect}
                       t={t}
                     />
@@ -491,6 +437,7 @@ export function Sidebar() {
         <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-red-50 dark:bg-red-500/5 shrink-0">
           <button
             onClick={handleDisconnect}
+                  disabled={serialOperationPending}
             className="w-full py-2 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white rounded-md text-sm font-medium transition-colors shadow-sm"
           >
             <Unplug size={16} /> {t("disconnect")}

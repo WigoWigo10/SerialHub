@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import { transitionTheme } from '../lib/themeTransition';
 import type { DashboardRefreshRate } from '../lib/dashboardRefresh';
 import type { SerialConnectionState } from '../lib/serialConnection';
+import type { SerialRecordingState } from '../lib/serialConnection';
+import type { SerialParameters } from '../lib/serialActions';
 
 export type ActivityMode = 'SERIAL' | 'SETTINGS' | 'DASHBOARD' | 'monitor' | 'BLUETOOTH' | 'SPY' | 'MQTT';
 
@@ -23,6 +25,14 @@ interface SettingsState {
   activePort: string | null;
   connectionStartTime: number | null;
   isRecording: boolean;
+  recordingRevision: number;
+  recordingPath: string | null;
+  recordingError: string | null;
+  applySerialRecording: (snapshot: SerialRecordingState) => void;
+  serialParameters: SerialParameters;
+  serialOperationPending: boolean;
+  recordingOperationPending: boolean;
+  sendOperationPending: boolean;
   
   txBytes: number;
   rxBytes: number;
@@ -83,6 +93,18 @@ export const useSettingsStore = create<SettingsState>()(
       activePort: null,
       connectionStartTime: null,
       isRecording: false,
+      recordingRevision: -1,
+      recordingPath: null,
+      recordingError: null,
+      serialParameters: { baud: 115200, data: 8, stop: 1, parity: 'None', flow: 'None' },
+      serialOperationPending: false,
+      recordingOperationPending: false,
+      sendOperationPending: false,
+      applySerialRecording: (snapshot) => set(state => {
+        if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0 || snapshot.revision <= state.recordingRevision) return state;
+        return { recordingRevision: snapshot.revision, isRecording: snapshot.recording,
+          recordingPath: snapshot.path, recordingError: snapshot.error };
+      }),
 
       txBytes: 0,
       rxBytes: 0,

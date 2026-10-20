@@ -1,118 +1,15 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { ChevronRight, ChevronDown, Folder, Copy, Hash, AlignLeft, Braces, LineChart, Binary } from "lucide-react";
 import toast from "react-hot-toast";
+import { TreeNode, treeChildren, treeNodeCopyValue, treeNodeKey } from "../../lib/mqttTree";
 import { useLanguage } from "../../hooks/useLanguage";
 
-interface TreeNode {
-  name: string;
-  fullName: string;
-  value?: string;
-  originalValue?: string;
-  timestamp?: string;
-  isJson?: boolean;
-  isVirtual?: boolean;
-  children: Record<string, TreeNode>;
-  jsonChildren: Record<string, TreeNode>;
-}
-
 interface TopicTreeProps {
-  messages: Array<{ topic: string; payload: string; timestamp: string }>;
+  tree: TreeNode;
   onToggleChart?: (topic: string) => void;
   recordedTopics?: string[];
   viewMode: 'ASCII' | 'HEX';
 }
-
-const toHexDisplay = (str?: string) => {
-  if (!str) return "";
-  let hex = "";
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i).toString(16).toUpperCase().padStart(2, '0');
-    hex += code + " ";
-  }
-  return hex.trim();
-};
-
-// Received names are keys in data dictionaries, never properties of a node.
-const childDictionary = (): Record<string, TreeNode> => Object.create(null);
-const createNode = (name: string, fullName: string): TreeNode => ({
-  name, fullName, children: childDictionary(), jsonChildren: childDictionary(),
-});
-const hasChild = (children: Record<string, TreeNode>, name: string) =>
-  Object.prototype.hasOwnProperty.call(children, name);
-const treeChildren = (node: TreeNode): TreeNode[] => [
-  ...Object.values(node.children), ...Object.values(node.jsonChildren),
-];
-// A topic segment and JSON field may have the same literal name and fullName.
-const treeNodeKey = (node: TreeNode): string => JSON.stringify([node.isVirtual ? 'json' : 'topic', node.name]);
-
-const buildTree = (messages: TopicTreeProps['messages']) => {
-  const root = createNode("root", "");
-
-  messages.forEach((msg) => {
-    const parts = msg.topic.split("/");
-    let current = root;
-    let pathSoFar = "";
-
-    parts.forEach((part, index) => {
-      pathSoFar += (index > 0 ? "/" : "") + part;
-      
-      if (!hasChild(current.children, part)) {
-        current.children[part] = createNode(part, pathSoFar);
-      }
-      current = current.children[part];
-
-      if (index === parts.length - 1) {
-        current.timestamp = msg.timestamp;
-        current.originalValue = msg.payload;
-
-        // Replace this payload's fields without changing actual MQTT subtopics.
-        current.jsonChildren = childDictionary();
-        
-        try {
-          const json = JSON.parse(msg.payload);
-          if (typeof json === 'object' && json !== null) {
-            current.value = "{ JSON }"; 
-            current.isJson = true;
-            processJsonToTree(current, json);
-          } else {
-            current.value = msg.payload;
-            current.isJson = false;
-          }
-        } catch {
-          current.value = msg.payload;
-          current.isJson = false;
-        }
-      }
-    });
-  });
-
-  return root;
-};
-
-const processJsonToTree = (node: TreeNode, jsonObj: object) => {
-  Object.entries(jsonObj).forEach(([key, val]) => {
-    const childName = key;
-    
-    if (!hasChild(node.jsonChildren, childName)) {
-      node.jsonChildren[childName] = {
-        ...createNode(childName, `${node.fullName}.${childName}`),
-        isJson: true,
-        isVirtual: true
-      };
-    }
-    
-    const childNode = node.jsonChildren[childName];
-    
-    if (typeof val === 'object' && val !== null) {
-      childNode.value = "{...}";
-      childNode.originalValue = JSON.stringify(val);
-      processJsonToTree(childNode, val);
-    } else {
-      childNode.value = String(val);
-      childNode.originalValue = String(val);
-    }
-  });
-};
 
 const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMode }: { 
   node: TreeNode; 
@@ -124,7 +21,7 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
   const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(depth < 2);
   const [flash, setFlash] = useState(false);
-  const children = treeChildren(node);
+  const children = treeChildren(node, viewMode);
   const hasChildren = children.length > 0;
   
   useEffect(() => {
@@ -135,13 +32,14 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
     }
   }, [node.value, node.timestamp]);
 
-  const handleCopy = (e: React.MouseEvent) => {
+  const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const textToCopy = viewMode === 'HEX' ? toHexDisplay(node.originalValue) : (node.originalValue || "");
-    if(textToCopy) {
-      navigator.clipboard.writeText(textToCopy);
+    try {
+      const textToCopy = treeNodeCopyValue(node, viewMode);
+      if (textToCopy === undefined) return;
+      await navigator.clipboard.writeText(textToCopy);
       toast.success(t('mqtt_toast_copied_short'), { duration: 1000, position: "bottom-center", icon: '📋' });
-    }
+    } catch { toast.error(t('mqtt_copy_failed')); }
   };
 
   const handleChart = (e: React.MouseEvent) => {
@@ -149,7 +47,7 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
     if (onToggleChart) onToggleChart(node.fullName);
   };
 
-  const isNumber = node.value && !isNaN(Number(node.value));
+  const isNumber = node.payloadIsUtf8 !== false && node.value && !isNaN(Number(node.value));
   const showChartIcon = (isNumber || recordedTopics.includes(node.fullName)) && viewMode === 'ASCII';
   const isActive = recordedTopics.includes(node.fullName);
 
@@ -157,13 +55,8 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
   let valueColorClass = "text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800";
 
   if (viewMode === 'HEX') {
-    if (node.originalValue) {
-      displayValue = toHexDisplay(node.originalValue);
-      valueColorClass = "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 font-mono tracking-widest text-[10px]";
-    } else {
-      displayValue = "{...}";
-      valueColorClass = "text-slate-400 italic";
-    }
+    displayValue = treeNodeCopyValue(node, viewMode);
+    valueColorClass = "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 font-mono tracking-widest text-[10px]";
   } else {
     if (node.isJson) {
       valueColorClass = "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 italic";
@@ -201,7 +94,7 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
           {node.name}
         </span>
 
-        {displayValue && (
+        {displayValue !== undefined && (
           <div className="ml-auto flex items-center gap-2 min-w-0 pl-4 justify-end flex-1">
             {!node.isJson && node.timestamp && (
               <span className="text-[10px] text-slate-400 font-normal opacity-70 shrink-0">
@@ -213,7 +106,8 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
                 className={`truncate max-w-[150px] md:max-w-[400px] lg:max-w-[800px] px-1.5 py-0.5 rounded ${valueColorClass}`} 
                 title={viewMode === 'HEX' ? t('mqtt_tt_hex_val') : (node.originalValue || node.value)}
             >
-              {displayValue}
+              {displayValue === "" ? (node.isVirtual ? '""' : t('mqtt_payload_empty')) : displayValue}
+              {node.jsonTruncated && viewMode === 'ASCII' && <span title={t('mqtt_json_limited')}> …</span>}
             </span>
 
             <div className="flex gap-1 shrink-0">
@@ -227,7 +121,7 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
                 </button>
                 )}
 
-                <button onClick={handleCopy} className="p-1 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" title={t('mqtt_tt_copy')}>
+                <button onClick={handleCopy} className="p-1 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" title={t(viewMode === 'HEX' ? 'mqtt_copy_hex' : node.isVirtual ? 'mqtt_copy_json_field' : 'mqtt_copy_text')}>
                 <Copy size={12} />
                 </button>
             </div>
@@ -253,9 +147,8 @@ const TreeNodeItem = ({ node, depth, onToggleChart, recordedTopics = [], viewMod
   );
 };
 
-export function TopicTree({ messages, onToggleChart, recordedTopics = [], viewMode }: TopicTreeProps) {
-  const tree = useMemo(() => buildTree(messages), [messages]);
-  const children = treeChildren(tree);
+export function TopicTree({ tree, onToggleChart, recordedTopics = [], viewMode }: TopicTreeProps) {
+  const children = treeChildren(tree, viewMode);
   const hasData = children.length > 0;
   
   // 1. Inicializa o hook de tradução

@@ -7,20 +7,21 @@ import ts from 'typescript';
 
 const directory = await mkdtemp(join(process.cwd(), 'node_modules', '.mqtt-session-'));
 after(() => rm(directory, { recursive: true, force: true }));
-for (const [source, output] of [['src/lib/mqttSession.ts', 'session.mjs'], ['src/stores/mqttSessionStore.ts', 'store.mjs']]) {
+for (const [source, output] of [['src/lib/mqttSession.ts', 'session.mjs'], ['src/stores/mqttSessionStore.ts', 'store.mjs'], ['src/lib/mqttPayload.ts', 'mqttPayload.mjs'], ['src/lib/mqttLimits.ts', 'mqttLimits.mjs'], ['src/lib/mqttTree.ts', 'mqttTree.mjs'], ['src/lib/mqttRetention.ts', 'mqttRetention.mjs'], ['src/lib/mqttMonitor.ts', 'mqttMonitor.mjs']]) {
   await writeFile(join(directory, output), ts.transpileModule(await readFile(new URL(`../${source}`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
-  }).outputText);
+  }).outputText.replace(/(?:\.\.\/lib\/|\.\/)(mqttPayload|mqttLimits|mqttTree|mqttRetention|mqttMonitor)(['"])/g, './$1.mjs$2'));
 }
 const { startMqttMonitor, createMqttController, mqttOperation } = await import(pathToFileURL(join(directory, 'session.mjs')).href);
 const { useMqttSessionStore: store } = await import(pathToFileURL(join(directory, 'store.mjs')).href);
 const snapshot = (revision, session_id, status, error = null) => ({ revision, session_id, status, error });
-const message = (session_id, sequence) => ({ session_id, sequence, topic: 'topic', payload: '42', qos: 0 });
+const message = (session_id, sequence) => ({ session_id, sequence, state_revision: 1, topic: 'topic', payload_bytes: [52, 50], qos: 0 });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const current = () => store.getState().snapshot;
 const apply = state => store.getState().applySnapshot(state);
-const reset = () => store.setState({ snapshot: snapshot(-1, 0, 'idle'), reserving: false, messages: [], subscriptions: [], lastSequence: 0 });
+const { emptyMqttRetention } = await import(pathToFileURL(join(directory, 'mqttRetention.mjs')).href);
+const reset = () => store.setState({ ...emptyMqttRetention(), snapshot: snapshot(-1, 0, 'idle'), reserving: false, messages: [], subscriptions: [], lastSequence: 0 });
 
 test('ordered global snapshots reject old sessions, errors and late ConnAck after timeout', () => {
   reset(); apply(snapshot(1, 1, 'connecting')); apply(snapshot(3, 1, 'timed_out', 'timeout'));
@@ -31,7 +32,7 @@ test('ordered global snapshots reject old sessions, errors and late ConnAck afte
   assert.equal(current().session_id, 2); assert.equal(current().status, 'connected'); assert.equal(current().error, null);
 });
 
-test('messages require connected identity, reject duplicate sequence and survive page changes in global memory', () => {
+test('messages require connected identity, reject duplicates and reset traffic only for a new session', () => {
   reset(); apply(snapshot(1, 1, 'connecting')); store.getState().applyMessage(message(1, 1));
   assert.equal(store.getState().messages.length, 0);
   apply(snapshot(2, 1, 'connected')); store.getState().applyMessage(message(1, 1));
@@ -40,7 +41,7 @@ test('messages require connected identity, reject duplicate sequence and survive
   apply(snapshot(3, 1, 'cancelled')); store.getState().applyMessage(message(1, 2));
   apply(snapshot(4, 2, 'connected')); store.getState().applyMessage(message(1, 3));
   store.getState().applyMessage(message(2, 1));
-  assert.deepEqual(store.getState().messages.map(m => m.session_id), [1, 2]);
+  assert.deepEqual(store.getState().messages.map(m => m.session_id), [2]);
   store.getState().clearMessages(); store.getState().applyMessage(message(2, 1));
   assert.equal(store.getState().messages.length, 0, 'clear must not allow event replay');
 });

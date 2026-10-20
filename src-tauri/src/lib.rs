@@ -1,6 +1,5 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs::File;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -42,13 +41,14 @@ pub struct SerialState {
     pub session: Arc<Mutex<serial_session::SerialSession>>,
     pub failures: std::sync::mpsc::Sender<serial_session::SessionFailure>,
     pub cleanup_worker: Mutex<Option<thread::JoinHandle<()>>>,
-    pub log_file: Arc<Mutex<Option<File>>>,
+    pub recording: Arc<Mutex<serial_recording::SerialRecording>>,
     pub tx_count: Arc<std::sync::atomic::AtomicU64>,
     pub rx_count: Arc<std::sync::atomic::AtomicU64>,
 }
 
 mod serial_session;
 mod mqtt_session;
+mod serial_recording;
 mod hardware;
 mod display;
 
@@ -71,7 +71,7 @@ pub fn run() {
             session: Arc::new(Mutex::new(serial_session::SerialSession::default())),
             failures,
             cleanup_worker: Mutex::new(None),
-            log_file: Arc::new(Mutex::new(None)),
+            recording: Arc::new(Mutex::new(serial_recording::SerialRecording::default())),
             tx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             rx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
@@ -253,6 +253,7 @@ pub fn run() {
             commands::serial_cmd::set_control_pin,
             commands::serial_cmd::start_recording,
             commands::serial_cmd::stop_recording,
+            commands::serial_cmd::serial_recording_state,
 
             // MQTT Commands
             mqtt_cmd::mqtt_begin_attempt,
@@ -274,6 +275,9 @@ pub fn run() {
                 }
                 if let Some(state) = app.try_state::<SerialState>() {
                     if let Ok(mut session) = state.session.lock() { let _ = session.stop(); }
+                    if let Ok(mut recording) = state.recording.lock() {
+                        if let Err(error) = recording.finish() { eprintln!("{error}"); }
+                    }
                     let _ = state.failures.send(serial_session::SessionFailure::Shutdown);
                     let worker = state.cleanup_worker.lock().ok().and_then(|mut worker| worker.take());
                     if let Some(worker) = worker { let _ = worker.join(); }

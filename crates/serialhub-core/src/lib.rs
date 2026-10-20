@@ -6,7 +6,8 @@ pub use connection::{DataBits, FlowControl, Parity, SerialConfig, SerialConnecti
 
 use serialport::SerialPortType;
 
-/// Port metadata using the existing SerialHub GUI's serialized field names.
+/// Port metadata shared verbatim by the GUI and CLI JSON.
+/// Unknown means the library could not classify it; it does not imply virtualization.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SerialPortInfo {
     pub port_name: String,
@@ -37,7 +38,7 @@ impl From<serialport::SerialPortInfo> for SerialPortInfo {
             }
             SerialPortType::BluetoothPort => "Bluetooth",
             SerialPortType::PciPort => "Native",
-            SerialPortType::Unknown => "Virtual",
+            SerialPortType::Unknown => "Unknown",
         }
         .to_string();
         result
@@ -116,7 +117,7 @@ mod tests {
         for (kind, label) in [
             (SerialPortType::BluetoothPort, "Bluetooth"),
             (SerialPortType::PciPort, "Native"),
-            (SerialPortType::Unknown, "Virtual"),
+            (SerialPortType::Unknown, "Unknown"),
         ] {
             assert_eq!(
                 serde_json::to_value(SerialPortInfo::from(port("COM1", kind))).unwrap(),
@@ -153,5 +154,50 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Unknown);
         assert_eq!(error.to_string(), "enumeration failed");
+    }
+
+    #[test]
+    fn unknown_is_not_classified_by_com_name_or_missing_usb_metadata() {
+        for name in [
+            "COM3",
+            "COM16",
+            "COM255",
+            "/dev/ttyS0",
+            "Intel AMT SOL",
+            "Virtual Serial Port",
+        ] {
+            let info = SerialPortInfo::from(port(name, SerialPortType::Unknown));
+            assert_eq!(info.port_name, name);
+            assert_eq!(info.port_type, "Unknown");
+            assert!(info.product.is_empty());
+            assert!(info.manufacturer.is_empty());
+            assert!(info.vid.is_empty() && info.pid.is_empty());
+        }
+    }
+
+    #[test]
+    fn shared_consumer_fixture_is_the_actual_core_conversion() {
+        let actual = list_ports_with(|| {
+            Ok(vec![
+                port("COM3", SerialPortType::Unknown),
+                port(
+                    "COM7",
+                    SerialPortType::UsbPort(UsbPortInfo {
+                        vid: 0x00ab,
+                        pid: 0xcdef,
+                        serial_number: None,
+                        manufacturer: Some("Fabricante".into()),
+                        product: Some("Sensor".into()),
+                    }),
+                ),
+                port("COM16", SerialPortType::BluetoothPort),
+                port("COM2", SerialPortType::PciPort),
+            ])
+        })
+        .unwrap();
+        let expected: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tests/fixtures/serial-ports.json"))
+                .unwrap();
+        assert_eq!(serde_json::to_value(actual).unwrap(), expected);
     }
 }

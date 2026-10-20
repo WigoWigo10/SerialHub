@@ -13,10 +13,15 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { LedIndicator } from "../ui/LedIndicator";
 import { useLanguage } from "../../hooks/useLanguage";
 import toast from "react-hot-toast";
+import { sendAction, prepareSerialText, sendSerialText } from "../../lib/serialActions";
+import { listenSafely } from "../../lib/serialPresentation";
 
 export function CommandBar() {
   const [text, setText] = useState("");
-  const [mode] = useState<"ASCII" | "HEX">("ASCII");
+  const connected = useSettingsStore(state => state.connected);
+  const sendOperationPending = useSettingsStore(state => state.sendOperationPending);
+  const sessionId = useSettingsStore(state => state.serialSessionId);
+  const pinPending = useRef(new Set<string>());
   const [lineEnding, setLineEnding] = useState<"NONE" | "LF" | "CRLF">("CRLF");
 
   const [history, setHistory] = useState<string[]>([]);
@@ -92,63 +97,43 @@ export function CommandBar() {
   }, []);
 
   useEffect(() => {
-    const unlistenRx = listen("serial-data", () => {
-      setRxActive(true);
-      clearTimeout(rxTimeout.current);
-      // @ts-ignore
-      rxTimeout.current = setTimeout(() => setRxActive(false), 50);
+    const unlistenRx = listenSafely(receive => listen("serial-data", receive), () => {
+      setRxActive(true); clearTimeout(rxTimeout.current);
+      rxTimeout.current = window.setTimeout(() => setRxActive(false), 50);
     });
-
-    const unlistenTx = listen("serial-sent", () => {
-      setTxActive(true);
-      clearTimeout(txTimeout.current);
-      // @ts-ignore
-      txTimeout.current = setTimeout(() => setTxActive(false), 50);
+    const unlistenTx = listenSafely(receive => listen("serial-sent", receive), () => {
+      setTxActive(true); clearTimeout(txTimeout.current);
+      txTimeout.current = window.setTimeout(() => setTxActive(false), 50);
     });
-
-    return () => {
-      unlistenRx.then((f) => f());
-      unlistenTx.then((f) => f());
-    };
+    return () => { unlistenRx(); unlistenTx(); clearTimeout(rxTimeout.current); clearTimeout(txTimeout.current); };
   }, []);
 
-  const togglePin = async (
-    pin: "DTR" | "RTS",
-    currentState: boolean,
-    setter: (v: boolean) => void,
-  ) => {
-    const newState = !currentState;
+  useEffect(() => { setDtrState(false); setRtsState(false); }, [sessionId, connected]);
+  const togglePin = async (pin: "DTR" | "RTS", currentState: boolean, setter: (v: boolean) => void) => {
+    if (!connected || pinPending.current.has(pin)) return;
+    pinPending.current.add(pin);
+    const expectedSessionId = useSettingsStore.getState().serialSessionId;
     try {
-      await invoke("set_control_pin", { pin, active: newState });
-      setter(newState);
-    } catch (error) {
-      console.error(error);
-      alert(t("alert_pin_error"));
-    }
+      await invoke("set_control_pin", { pin, active: !currentState, expectedSessionId });
+      if (useSettingsStore.getState().serialSessionId === expectedSessionId && useSettingsStore.getState().connected) setter(!currentState);
+    } catch (error) { toast.error(String(error)); }
+    finally { pinPending.current.delete(pin); }
   };
 
   const handleSend = async () => {
-    if (!text) return;
-
-    setHistory((prev) => {
-      const historyWithoutDuplicate = prev.filter((item) => item !== text);
-      return [...historyWithoutDuplicate.slice(-49), text];
-    });
-    setHistoryIndex(-1);
-    setDraft("");
-
-    let payload = text;
-    if (mode === "ASCII") {
-      if (lineEnding === "LF") payload += "\n";
-      if (lineEnding === "CRLF") payload += "\r\n";
-    }
-    
+    const sentText = text;
+    if (!sentText) return;
+    if (!useSettingsStore.getState().connected) { toast.error(t('serial_not_connected')); return; }
     try {
-      await invoke("write_serial", { content: payload });
-      setText("");
-    } catch (error) {
-      console.error(error);
-    }
+      await sendAction(async () => {
+        const expectedSessionId = useSettingsStore.getState().serialSessionId;
+        const content = prepareSerialText(sentText, lineEnding);
+        await sendSerialText(content, payload => invoke<number>("write_serial", { content: payload, expectedSessionId }));
+        setHistory(previous => [...previous.filter(item => item !== sentText).slice(-49), sentText]);
+        setHistoryIndex(-1); setDraft("");
+        setText(current => current === sentText ? "" : current);
+      }, value => useSettingsStore.setState({ sendOperationPending: value }));
+    } catch (error) { toast.error(`${t('serial_send_error')} ${error}`, { duration: 8000 }); }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -247,11 +232,7 @@ export function CommandBar() {
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={
-              mode === "ASCII"
-                ? t("input_placeholder_ascii")
-                : t("input_placeholder_hex")
-            }
+            placeholder={t("input_placeholder_ascii")}
             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-sm rounded-md pl-3 pr-8 py-2 focus:outline-none focus:border-blue-500 font-mono transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-600"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600">
@@ -287,6 +268,7 @@ export function CommandBar() {
 
       <button
         onClick={handleSend}
+        disabled={!connected || sendOperationPending || !text}
         className="
               group relative flex items-center justify-center p-2 rounded-md
               bg-gradient-to-b from-blue-500 to-blue-600

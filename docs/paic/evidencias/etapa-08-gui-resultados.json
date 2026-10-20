@@ -1,0 +1,38 @@
+{
+  "utf8": {
+    "correct": true,
+    "replacement": false,
+    "codepoints": [
+      91,
+      49,
+      57,
+      58,
+      51,
+      50,
+      58,
+      48,
+      56,
+      93,
+      32,
+      233,
+      10,
+      32
+    ]
+  },
+  "clear": true,
+  "tx": 3,
+  "recordingGlobal": true,
+  "replacementRejected": true,
+  "pageRecording": [
+    true,
+    true
+  ],
+  "staysRecordingAfterClose": true,
+  "stopped": true,
+  "openError": true,
+  "legacyArgs": true,
+  "staleSend": true,
+  "staleControl": true,
+  "fileUnchanged": true,
+  "noReplacementFile": true
+}

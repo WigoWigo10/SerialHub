@@ -1,0 +1,36 @@
+[
+  {
+    "args": [
+      "--help"
+    ],
+    "exit": 0,
+    "stdout": "SerialHub — portas e monitor Serial\n\nUso:\n  serialhub --help\n  serialhub --version\n  serialhub ports\n  serialhub ports --json\n  serialhub serial monitor --port PORTA --baud BAUD [--duration SEGUNDOS]\n  serialhub serial monitor --help\n\nOpções:\n  -h, --help       Exibe esta ajuda\n  -V, --version    Exibe a versão da CLI\n  --json           Retorna um array JSON (somente com ports)\n\nA listagem apenas enumera dispositivos; não abre portas nem transmite dados.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "--version"
+    ],
+    "exit": 0,
+    "stdout": "serialhub 0.1.0\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ports"
+    ],
+    "exit": 0,
+    "stdout": "COM24 (Virtual)\nCOM16 (Virtual)\nCOM3 (Virtual)\nCOM23 (Virtual)\nCOM17 (Virtual)\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ports",
+      "--json"
+    ],
+    "exit": 0,
+    "stdout": "[{\"port_name\":\"COM24\",\"port_type\":\"Virtual\",\"vid\":\"\",\"pid\":\"\",\"manufacturer\":\"\",\"product\":\"\"},{\"port_name\":\"COM16\",\"port_type\":\"Virtual\",\"vid\":\"\",\"pid\":\"\",\"manufacturer\":\"\",\"product\":\"\"},{\"port_name\":\"COM3\",\"port_type\":\"Virtual\",\"vid\":\"\",\"pid\":\"\",\"manufacturer\":\"\",\"product\":\"\"},{\"port_name\":\"COM23\",\"port_type\":\"Virtual\",\"vid\":\"\",\"pid\":\"\",\"manufacturer\":\"\",\"product\":\"\"},{\"port_name\":\"COM17\",\"port_type\":\"Virtual\",\"vid\":\"\",\"pid\":\"\",\"manufacturer\":\"\",\"product\":\"\"}]\n",
+    "stderr": "",
+    "jsonArray": true
+  }
+]

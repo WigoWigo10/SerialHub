@@ -1,11 +1,12 @@
+use crate::serial_recording::{transmit_reported, RecordingSnapshot};
 use crate::serial_session::{spawn_reader, transient_error, ConnectionSnapshot, SessionFailure};
 use crate::SerialState;
 use serialhub_core::{
     DataBits, FlowControl, Parity, SerialConfig, SerialConnection, SerialPortInfo, StopBits,
 };
-use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
@@ -48,17 +49,16 @@ pub fn open_port(
     let _ = port.set_dtr(false);
     let _ = port.set_rts(false);
     let keep_running = session.start(port, port_name.clone())?;
-    let log_file_arc = state.log_file.clone();
+    let recording_arc = state.recording.clone();
     let reader_app = app.clone();
     let worker = spawn_reader(
         port_clone,
         keep_running,
         state.failures.clone(),
         move |data| {
-            if let Ok(mut lock) = log_file_arc.lock() {
-                if let Some(file) = lock.as_mut() {
-                    let _ = file.write_all(data);
-                    let _ = file.flush();
+            if let Ok(mut recording) = recording_arc.lock() {
+                if recording.rx(data).is_err() {
+                    let _ = reader_app.emit("serial-recording-state", recording.snapshot());
                 }
             }
             reader_app
@@ -135,44 +135,39 @@ pub fn serial_connection_state(
 pub fn write_serial(
     app: AppHandle,
     content: String,
+    expected_session_id: Option<u64>,
     state: State<'_, SerialState>,
 ) -> Result<usize, String> {
     let mut port_guard = state.session.lock().map_err(|e| e.to_string())?;
+    if expected_session_id.is_some_and(|id| id != port_guard.snapshot().session_id) {
+        return Err("Sessão Serial alterada; envio não aplicado".into());
+    }
 
     if let Some(port) = port_guard.connection.as_mut() {
         let bytes = content.as_bytes();
-        match port.write(bytes) {
-            Ok(size) => {
-                if let Ok(mut lock) = state.log_file.lock() {
-                    if let Some(file) = lock.as_mut() {
-                        let _ = file.write_all(b"\n>>> [TX] ");
-
-                        let _ = file.write_all(bytes);
-
-                        if !bytes.ends_with(b"\n") {
-                            let _ = file.write_all(b"\n");
-                        }
-
-                        let _ = file.flush();
-                    }
+        let transfer = transmit_reported(port, bytes, |accepted| {
+            if let Ok(mut recording) = state.recording.lock() {
+                if recording.tx(accepted).is_err() {
+                    let _ = app.emit("serial-recording-state", recording.snapshot());
                 }
-
-                let _ = app.emit("serial-tx", size);
-
-                let _ = app.emit("serial-sent", bytes.to_vec());
-
-                Ok(size)
             }
-            Err(e) => {
-                if !transient_error(&e) {
-                    let _ = state.failures.send(SessionFailure::Fatal {
-                        running: port_guard.running.clone(),
-                        error: e.to_string(),
-                    });
-                }
-                Err(format!("Erro escrita: {}", e))
+            let _ = app.emit("serial-tx", accepted.len());
+            let _ = app.emit("serial-sent", accepted);
+        });
+        if let Some(error) = transfer.error {
+            if !transient_error(&error) {
+                let _ = state.failures.send(SessionFailure::Fatal {
+                    running: port_guard.running.clone(),
+                    error: error.to_string(),
+                });
             }
+            return Err(format!(
+                "Erro escrita: {error} ({} de {} bytes aceitos; não reenviados automaticamente). Reenviar pode duplicar o trecho já aceito.",
+                transfer.accepted,
+                bytes.len()
+            ));
         }
+        Ok(transfer.accepted)
     } else {
         Err("Porta fechada".to_string())
     }
@@ -182,9 +177,13 @@ pub fn write_serial(
 pub fn set_control_pin(
     pin: String,
     active: bool,
+    expected_session_id: Option<u64>,
     state: State<'_, SerialState>,
 ) -> Result<(), String> {
     let mut state_port = state.session.lock().map_err(|_| "Falha no Lock")?;
+    if expected_session_id.is_some_and(|id| id != state_port.snapshot().session_id) {
+        return Err("Sessão Serial alterada; controle não aplicado".into());
+    }
 
     if let Some(port) = state_port.connection.as_mut() {
         let result = match pin.as_str() {
@@ -205,26 +204,32 @@ pub fn set_control_pin(
 }
 
 #[command]
-pub fn start_recording(file_path: String, state: State<'_, SerialState>) -> Result<(), String> {
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file_path)
-        .map_err(|e| e.to_string())?;
-
-    let mut log_lock = state.log_file.lock().map_err(|_| "Lock fail")?;
-    *log_lock = Some(file);
-
-    println!("Gravando em: {}", file_path);
+pub fn start_recording(
+    app: AppHandle,
+    file_path: String,
+    state: State<'_, SerialState>,
+) -> Result<(), String> {
+    let mut recording = state.recording.lock().map_err(|_| "Lock fail")?;
+    recording.start_file(Path::new(&file_path))?;
+    let _ = app.emit("serial-recording-state", recording.snapshot());
     Ok(())
 }
 
 #[command]
-pub fn stop_recording(state: State<'_, SerialState>) -> Result<(), String> {
-    let mut log_lock = state.log_file.lock().map_err(|_| "Lock fail")?;
-    *log_lock = None;
-    println!("Gravação parada.");
-    Ok(())
+pub fn stop_recording(app: AppHandle, state: State<'_, SerialState>) -> Result<(), String> {
+    let mut recording = state.recording.lock().map_err(|_| "Lock fail")?;
+    let result = recording.finish();
+    let _ = app.emit("serial-recording-state", recording.snapshot());
+    result?;
+    match recording.snapshot().error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+#[command]
+pub fn serial_recording_state(state: State<'_, SerialState>) -> Result<RecordingSnapshot, String> {
+    Ok(state.recording.lock().map_err(|_| "Lock fail")?.snapshot())
 }
 
 #[allow(dead_code)]

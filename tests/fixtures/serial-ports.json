@@ -1,0 +1,6 @@
+[
+  {"port_name":"COM3","port_type":"Unknown","vid":"","pid":"","manufacturer":"","product":""},
+  {"port_name":"COM7","port_type":"USB","vid":"00ab","pid":"cdef","manufacturer":"Fabricante","product":"Sensor"},
+  {"port_name":"COM16","port_type":"Bluetooth","vid":"","pid":"","manufacturer":"","product":""},
+  {"port_name":"COM2","port_type":"Native","vid":"","pid":"","manufacturer":"","product":""}
+]

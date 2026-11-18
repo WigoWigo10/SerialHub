@@ -7,6 +7,8 @@ use std::sync::Arc;
 use std::sync::{mpsc, Mutex};
 use std::thread::JoinHandle;
 
+mod batch;
+
 #[derive(Default)]
 pub struct SerialSession {
     pub connection: Option<SerialConnection>,
@@ -80,7 +82,7 @@ impl SerialSession {
     }
 
     /// Call while holding the session mutex. Workers must not lock that mutex.
-    /// Cancellation is checked after reads too, preventing late GUI events.
+    /// Cancel further reads, then join the worker after it drains accepted events.
     pub fn stop(&mut self) -> Result<(), String> {
         let changed =
             self.connection.is_some() || !self.workers.is_empty() || self.port_name.is_some();
@@ -168,13 +170,14 @@ pub fn spawn_reader(
     reader: SerialConnection,
     running: Arc<AtomicBool>,
     failures: mpsc::Sender<SessionFailure>,
-    mut receive: impl FnMut(&[u8]) -> Result<(), String> + Send + 'static,
+    record: impl FnMut(&[u8]) + Send + 'static,
+    emit: impl FnMut(&[u8]) -> Result<(), String> + Send + 'static,
 ) -> io::Result<JoinHandle<()>> {
     std::thread::Builder::new()
         .name("serial-reader".into())
         .spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                read_loop(reader, &running, &mut receive)
+                batch::run(reader, &running, record, emit)
             }));
             let error = match result {
                 Ok(result) => result.err(),

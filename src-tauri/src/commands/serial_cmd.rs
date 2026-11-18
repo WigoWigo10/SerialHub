@@ -50,6 +50,7 @@ pub fn open_port(
     let _ = port.set_rts(false);
     let keep_running = session.start(port, port_name.clone())?;
     let recording_arc = state.recording.clone();
+    let recording_app = app.clone();
     let reader_app = app.clone();
     let worker = spawn_reader(
         port_clone,
@@ -58,9 +59,11 @@ pub fn open_port(
         move |data| {
             if let Ok(mut recording) = recording_arc.lock() {
                 if recording.rx(data).is_err() {
-                    let _ = reader_app.emit("serial-recording-state", recording.snapshot());
+                    let _ = recording_app.emit("serial-recording-state", recording.snapshot());
                 }
             }
+        },
+        move |data| {
             reader_app
                 .emit("serial-data", data)
                 .map_err(|error| error.to_string())

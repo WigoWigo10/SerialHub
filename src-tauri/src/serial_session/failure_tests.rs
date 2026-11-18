@@ -178,7 +178,7 @@ fn attach(
     let reader = connection.try_clone().unwrap();
     let mut session = session.lock().unwrap();
     let running = session.start(connection, "test-virtual".into()).unwrap();
-    let worker = spawn_reader(reader, running.clone(), failures, receive).unwrap();
+    let worker = spawn_reader(reader, running.clone(), failures, |_| {}, receive).unwrap();
     session.workers.push(worker);
     running
 }
@@ -220,7 +220,7 @@ fn fatal_read_releases_both_handles_before_notification_and_allows_reconnect() {
     assert_eq!(shared.lock().unwrap().drops, 0);
     shared.lock().unwrap().read_error = Some(io::ErrorKind::BrokenPipe);
     let (lost, supervisor_id) = notifications.recv_timeout(Duration::from_secs(2)).unwrap();
-    assert_ne!(reader_id, supervisor_id); // the joining supervisor is not the reader
+    assert_ne!(reader_id, supervisor_id); // the supervisor is separate from the emitter
     assert!(!lost.connected);
     assert_eq!(lost.port_name, None);
     assert!(lost.error.unwrap().contains("simulated read"));

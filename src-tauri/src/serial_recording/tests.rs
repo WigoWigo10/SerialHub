@@ -73,10 +73,9 @@ impl Drop for Temp {
 }
 
 #[test]
-fn append_preserves_existing_bytes_accented_path_and_raw_rx_tx_contract() {
+fn creates_log_with_accented_path_and_preserves_raw_rx_tx_contract() {
     let temp = Temp::new();
     let path = temp.0.join("captura com espaço-é.log");
-    std::fs::write(&path, [0x00, 0xff]).unwrap();
     let mut recording = SerialRecording::default();
     recording.start_file(&path).unwrap();
     recording.rx(&[0xc3, 0xa9, 0, 0xff, 13, 10]).unwrap();
@@ -85,12 +84,27 @@ fn append_preserves_existing_bytes_accented_path_and_raw_rx_tx_contract() {
     assert_eq!(
         std::fs::read(&path).unwrap(),
         [
-            vec![0, 255, 195, 169, 0, 255, 13, 10],
+            vec![195, 169, 0, 255, 13, 10],
             b"\n>>> [TX] AB\n".to_vec()
         ]
         .concat()
     );
     assert!(!recording.snapshot().recording);
+}
+
+#[test]
+fn rejects_existing_log_without_altering_it_or_starting_recording() {
+    let temp = Temp::new();
+    let path = temp.0.join("captura anterior.log");
+    let original = [0, 255, 13, 10];
+    std::fs::write(&path, original).unwrap();
+
+    let mut recording = SerialRecording::default();
+    let error = recording.start_file(&path).unwrap_err();
+    assert!(error.contains("Já existe"));
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    assert!(!recording.snapshot().recording);
+    assert_eq!(recording.snapshot().revision, 0);
 }
 
 #[test]

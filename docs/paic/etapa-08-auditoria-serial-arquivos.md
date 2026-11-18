@@ -112,6 +112,12 @@ Não há par virtual confirmado. Permanecem pendentes: conexão/recepção/desco
 
 Cancelar o diálogo nativo, escolher destino existente e sua eventual mensagem de substituição, gestos de seleção/rolagem e clipboard exigem verificação manual adicional. O backend anexa independentemente do diálogo. Falhas de capacidade/permissão e flush foram simuladas; não se provocou falta de espaço nem se alteraram arquivos do usuário.
 
+## Criação de um arquivo novo por gravação
+
+O fluxo descrito acima usava `serial_log.log` e anexava dados a um arquivo existente. Agora o diálogo sugere um nome com porta, baud rate e horário local até milissegundos, por exemplo `serial_COM58_921600baud_2026-11-18_16-42-31-084.log`. Se o diálogo for aberto sem conexão, a sugestão usa `serial_offline`. O nome pode ser editado e identifica a configuração no momento em que o diálogo foi aberto. A gravação ainda continua até ser encerrada, inclusive se a porta for desconectada e reaberta no mesmo intervalo.
+
+O backend cria o destino de forma exclusiva. Se o caminho já existir, a gravação não começa e o arquivo anterior permanece intacto, mesmo que o diálogo do sistema ofereça confirmação. O formato continua sendo RX bruto e TX com marcador. Os testes cobrem criação, recusa de um arquivo existente sem perda de conteúdo, bytes binários, caminho com acento e nome sugerido.
+
 Logging continua síncrono. Disco/driver bloqueado pode atrasar leitura e desconexão; não se comprovou um problema de desempenho nem existe prazo rígido de encerramento. O cancelamento Serial pode descartar dados ainda no driver ou uma leitura interrompida; não promete drenar todo o dispositivo. O cutoff da gravação é a aquisição do mutex pelo Stop, não um instante físico no cabo.
 
 Flush e descarte do File não garantem persistência física em disco. Erros do fechamento implícito do sistema operacional não são retornados por Drop. Saída normal tenta finalizar e informa erro em stderr; encerramento forçado e perda de energia não têm garantia. Nenhuma mensagem afirma que flush torna o arquivo fisicamente durável.

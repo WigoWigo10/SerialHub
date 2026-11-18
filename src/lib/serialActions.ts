@@ -14,6 +14,15 @@ export const connectionAction = createActionGate();
 export const recordingAction = createActionGate();
 export const sendAction = createActionGate();
 
+export function suggestSerialLogName(port: string | null, baud: number, now = new Date()): string {
+  const portLabel = port?.split(/[/\\]/).pop()?.replace(/[^a-z0-9._-]+/gi, '-').slice(0, 48);
+  const source = portLabel ? `${portLabel}_${baud}baud` : 'offline';
+  const pad = (value: number, width = 2) => String(value).padStart(width, '0');
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}-${pad(now.getMilliseconds(), 3)}`;
+  return `serial_${source}_${date}_${time}.log`;
+}
+
 export function prepareSerialText(text: string, ending: 'NONE' | 'LF' | 'CRLF'): string {
   return text + (ending === 'LF' ? '\n' : ending === 'CRLF' ? '\r\n' : '');
 }

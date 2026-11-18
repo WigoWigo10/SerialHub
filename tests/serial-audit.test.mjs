@@ -18,7 +18,7 @@ for (const [source, name] of [
   await writeFile(join(directory, name), code);
 }
 const { SerialPresentation, listenSafely } = await import(pathToFileURL(join(directory, 'serialPresentation.mjs')).href);
-const { createActionGate, toggleRecording, prepareSerialText, sendSerialText } = await import(pathToFileURL(join(directory, 'serialActions.mjs')).href);
+const { createActionGate, toggleRecording, suggestSerialLogName, prepareSerialText, sendSerialText } = await import(pathToFileURL(join(directory, 'serialActions.mjs')).href);
 const { startStateMonitor } = await import(pathToFileURL(join(directory, 'serialConnection.mjs')).href);
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const { useSettingsStore: store } = await import(pathToFileURL(join(directory, 'settingsStore.mjs')).href);
@@ -97,6 +97,13 @@ test('recording cancellation and failed start/finish do not return a success out
   await assert.rejects(toggleRecording(adapter), /open denied/);
   adapter.active = () => true; adapter.stop = async () => { throw Error('flush failed'); };
   await assert.rejects(toggleRecording(adapter), /flush failed/);
+});
+
+test('log names identify the active serial port, baud and local time without path separators', () => {
+  const now = new Date(2026, 10, 18, 16, 42, 31, 84);
+  assert.equal(suggestSerialLogName('COM58', 921600, now), 'serial_COM58_921600baud_2026-11-18_16-42-31-084.log');
+  assert.equal(suggestSerialLogName('/dev/tty USB:0', 115200, now), 'serial_tty-USB-0_115200baud_2026-11-18_16-42-31-084.log');
+  assert.equal(suggestSerialLogName(null, 115200, now), 'serial_offline_2026-11-18_16-42-31-084.log');
 });
 
 test('recording failure is global, ordered and not persisted as an active recording', async () => {

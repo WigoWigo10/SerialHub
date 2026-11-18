@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
-import { connectionAction, recordingAction, toggleRecording } from "../../lib/serialActions";
+import { connectionAction, recordingAction, suggestSerialLogName, toggleRecording } from "../../lib/serialActions";
 import { listenSafely } from "../../lib/serialPresentation";
 import toast from "react-hot-toast";
 import { SerialPortInfo as SerialPort, serialPortPresentation } from "../../lib/serialPorts";
@@ -127,7 +127,13 @@ export function Sidebar() {
       await recordingAction(async () => {
         const result = await toggleRecording({
           active: () => useSettingsStore.getState().isRecording,
-          choose: () => save({ filters: [{ name: "Serial diagnostic log", extensions: ["log"] }], defaultPath: "serial_log.log" }),
+          choose: () => {
+            const { activePort, serialParameters } = useSettingsStore.getState();
+            return save({
+              filters: [{ name: "Serial diagnostic log", extensions: ["log"] }],
+              defaultPath: suggestSerialLogName(activePort, serialParameters.baud),
+            });
+          },
           start: filePath => invoke("start_recording", { filePath }),
           stop: () => invoke("stop_recording"),
         });

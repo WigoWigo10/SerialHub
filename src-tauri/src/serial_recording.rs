@@ -1,4 +1,4 @@
-//! Append-only diagnostic log: raw RX, accepted TX with the legacy TX marker.
+//! Diagnostic log in a new file: raw RX, accepted TX with the legacy TX marker.
 use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
@@ -35,10 +35,15 @@ impl SerialRecording {
             return Err("Gravação já iniciada; encerre antes de escolher outro arquivo".into());
         }
         let file = OpenOptions::new()
-            .create(true)
-            .append(true)
+            .create_new(true)
+            .write(true)
             .open(path)
-            .map_err(|error| format!("Falha ao abrir gravação: {error}"))?;
+            .map_err(|error| match error.kind() {
+                io::ErrorKind::AlreadyExists => {
+                    "Já existe um arquivo com esse nome. Escolha outro nome para a gravação.".into()
+                }
+                _ => format!("Falha ao criar arquivo de gravação: {error}"),
+            })?;
         self.start_writer(path.to_string_lossy().into_owned(), Box::new(file))
     }
 

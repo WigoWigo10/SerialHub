@@ -147,6 +147,24 @@ test('failed connection attempts do not clear terminal history', async () => {
   await connect('SIMULATED'); assert.equal(reported, 1);
 });
 
+test('disconnect shows a pending operation until the backend finishes', async () => {
+  const source = await readFile(new URL('../src/components/layout/Sidebar.tsx', import.meta.url), 'utf8');
+  const backend = deferred();
+  store.setState({ connected: true, activePort: 'SIMULATED' });
+  const disconnect = closure(source, 'handleDisconnect', {
+    invoke: command => { assert.equal(command, 'close_port'); return backend.promise; },
+    useSettingsStore: store, connectionAction: createActionGate(), toast: { error: assert.fail },
+  });
+  const result = disconnect();
+  assert.equal(store.getState().serialDisconnectPending, true);
+  assert.equal(store.getState().serialOperationPending, true);
+  assert.equal(store.getState().connected, true);
+  backend.resolve();
+  await result;
+  assert.equal(store.getState().serialDisconnectPending, false);
+  assert.equal(store.getState().serialOperationPending, false);
+});
+
 test('TX has one global counter owner and terminal cleanup releases its observer (static wiring)', async () => {
   const dashboard = await readFile(new URL('../src/components/pages/DashboardPage.tsx', import.meta.url), 'utf8');
   const terminal = await readFile(new URL('../src/components/layout/TerminalArea.tsx', import.meta.url), 'utf8');

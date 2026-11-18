@@ -109,3 +109,11 @@ Com a aplicação real nas páginas Dashboard, Configurações e MQTT, foram emi
 5. Não foram testados equipamentos físicos, outros sistemas, instalador/release, broker MQTT nem bridge. Nenhuma funcionalidade de CLI foi acrescentada.
 
 Esta etapa resolve a dependência da Sidebar para encerramento da sessão normal GUI no backend e acompanhamento do estado global; a confirmação nativa com par virtual continua necessária.
+
+## Resposta do botão Desconectar com baud rate incorreto
+
+No Windows, com a ESP32-C6 na COM58 transmitindo a 921600 baud, a GUI recebeu caracteres ilegíveis quando configurada para 115200 baud. Em uma medição por condição, do acionamento pelo controle do Windows até observar o estado Desconectado, foram 411 ms a 115200 e 254 ms a 921600. Esses valores incluem a automação e a leitura da interface.
+
+O comando `close_port` passou a aguardar a thread Serial em um worker de I/O, fora da thread da interface. A GUI mostra “Desconectando…” enquanto a operação aguarda. Configuração, envio e controles de pino ficam indisponíveis nesse intervalo. A GUI continua recebendo o estado oficial da sessão, publicado depois que o backend aguarda as threads e libera a porta. O contrato de retorno do comando foi preservado e nenhum timeout de driver foi alterado.
+
+Na contraprova a 115200, o build corrigido mostrou Desconectado e a GUI reabriu a COM58. A automação mediu 378 ms em uma tentativa e 2 s em outra, dos quais 1,375 s foram gastos pelo mecanismo de acionamento do clique. Essas amostras não estabelecem ganho de latência. O teste com uma resposta de backend pendente falhou antes da mudança e passou depois. Passaram também as suítes Node (161 testes) e Rust (45 testes) e os builds de desenvolvimento e frontend. Permanecem possíveis atrasos de driver e de disco, mesmo com a espera executada fora da thread da interface.

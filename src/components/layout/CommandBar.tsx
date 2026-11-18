@@ -19,6 +19,7 @@ import { listenSafely } from "../../lib/serialPresentation";
 export function CommandBar() {
   const [text, setText] = useState("");
   const connected = useSettingsStore(state => state.connected);
+  const serialOperationPending = useSettingsStore(state => state.serialOperationPending);
   const sendOperationPending = useSettingsStore(state => state.sendOperationPending);
   const sessionId = useSettingsStore(state => state.serialSessionId);
   const pinPending = useRef(new Set<string>());
@@ -110,9 +111,10 @@ export function CommandBar() {
 
   useEffect(() => { setDtrState(false); setRtsState(false); }, [sessionId, connected]);
   const togglePin = async (pin: "DTR" | "RTS", currentState: boolean, setter: (v: boolean) => void) => {
-    if (!connected || pinPending.current.has(pin)) return;
+    const state = useSettingsStore.getState();
+    if (!state.connected || state.serialOperationPending || pinPending.current.has(pin)) return;
     pinPending.current.add(pin);
-    const expectedSessionId = useSettingsStore.getState().serialSessionId;
+    const expectedSessionId = state.serialSessionId;
     try {
       await invoke("set_control_pin", { pin, active: !currentState, expectedSessionId });
       if (useSettingsStore.getState().serialSessionId === expectedSessionId && useSettingsStore.getState().connected) setter(!currentState);
@@ -122,8 +124,9 @@ export function CommandBar() {
 
   const handleSend = async () => {
     const sentText = text;
-    if (!sentText) return;
-    if (!useSettingsStore.getState().connected) { toast.error(t('serial_not_connected')); return; }
+    const state = useSettingsStore.getState();
+    if (!sentText || state.serialOperationPending) return;
+    if (!state.connected) { toast.error(t('serial_not_connected')); return; }
     try {
       await sendAction(async () => {
         const expectedSessionId = useSettingsStore.getState().serialSessionId;
@@ -268,7 +271,7 @@ export function CommandBar() {
 
       <button
         onClick={handleSend}
-        disabled={!connected || sendOperationPending || !text}
+        disabled={!connected || serialOperationPending || sendOperationPending || !text}
         className="
               group relative flex items-center justify-center p-2 rounded-md
               bg-gradient-to-b from-blue-500 to-blue-600
@@ -293,14 +296,14 @@ export function CommandBar() {
           active={dtrState}
           color="yellow"
           label="DTR"
-          interactive
+          interactive={!serialOperationPending}
           onClick={() => togglePin("DTR", dtrState, setDtrState)}
         />
         <LedIndicator
           active={rtsState}
           color="yellow"
           label="RTS"
-          interactive
+          interactive={!serialOperationPending}
           onClick={() => togglePin("RTS", rtsState, setRtsState)}
         />
 

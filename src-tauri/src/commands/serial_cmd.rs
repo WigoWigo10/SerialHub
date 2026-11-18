@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
-use tauri::{command, AppHandle, Emitter, State};
+use tauri::{command, AppHandle, Emitter, Manager, State};
 
 #[command]
 pub fn list_ports() -> Result<Vec<SerialPortInfo>, String> {
@@ -114,14 +114,19 @@ fn gui_config(
 }
 
 #[command]
-pub fn close_port(app: AppHandle, state: State<'_, SerialState>) -> Result<String, String> {
-    let mut session = state.session.lock().map_err(|_| "Lock fail")?;
-    let stopped = session.stop();
-    let _ = app.emit("serial-connection-state", session.snapshot());
-    stopped?;
+pub async fn close_port(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SerialState>();
+        let mut session = state.session.lock().map_err(|_| "Lock fail")?;
+        let stopped = session.stop();
+        let _ = app.emit("serial-connection-state", session.snapshot());
+        stopped?;
 
-    println!("Desconectado.");
-    Ok("Desconectado.".to_string())
+        println!("Desconectado.");
+        Ok("Desconectado.".to_string())
+    })
+    .await
+    .map_err(|error| format!("Falha ao aguardar o encerramento Serial: {error}"))?
 }
 
 #[command]

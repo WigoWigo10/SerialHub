@@ -95,6 +95,7 @@ export function Sidebar() {
   const [scanning, setScanning] = useState(false);
   const parameters = useSettingsStore(state => state.serialParameters);
   const serialOperationPending = useSettingsStore(state => state.serialOperationPending);
+  const serialDisconnectPending = useSettingsStore(state => state.serialDisconnectPending);
   const recordingOperationPending = useSettingsStore(state => state.recordingOperationPending);
   const { baud: selectedBaud, data: dataBits, stop: stopBits, parity, flow: flowControl } = parameters;
   const mounted = useRef(true);
@@ -167,7 +168,9 @@ export function Sidebar() {
   };
   const handleDisconnect = async () => {
     try {
-      await connectionAction(() => invoke("close_port"), value => useSettingsStore.setState({ serialOperationPending: value }));
+      await connectionAction(() => invoke("close_port"), value => {
+        useSettingsStore.setState({ serialOperationPending: value, serialDisconnectPending: value });
+      });
     } catch (error) { toast.error(String(error)); }
   };
   const updateConnection = async (overrides: Partial<typeof parameters>) => {
@@ -437,10 +440,11 @@ export function Sidebar() {
         <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-red-50 dark:bg-red-500/5 shrink-0">
           <button
             onClick={handleDisconnect}
-                  disabled={serialOperationPending}
+            disabled={serialOperationPending}
+            aria-busy={serialDisconnectPending}
             className="w-full py-2 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white rounded-md text-sm font-medium transition-colors shadow-sm"
           >
-            <Unplug size={16} /> {t("disconnect")}
+            <Unplug size={16} /> {t(serialDisconnectPending ? "serial_disconnecting" : "disconnect")}
           </button>
         </div>
       )}

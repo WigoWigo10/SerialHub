@@ -31,6 +31,7 @@ interface SettingsState {
   applySerialRecording: (snapshot: SerialRecordingState) => void;
   serialParameters: SerialParameters;
   serialOperationPending: boolean;
+  serialDisconnectPending: boolean;
   recordingOperationPending: boolean;
   sendOperationPending: boolean;
   
@@ -98,6 +99,7 @@ export const useSettingsStore = create<SettingsState>()(
       recordingError: null,
       serialParameters: { baud: 115200, data: 8, stop: 1, parity: 'None', flow: 'None' },
       serialOperationPending: false,
+      serialDisconnectPending: false,
       recordingOperationPending: false,
       sendOperationPending: false,
       applySerialRecording: (snapshot) => set(state => {

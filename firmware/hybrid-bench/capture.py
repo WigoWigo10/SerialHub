@@ -7,11 +7,23 @@ import statistics
 import threading
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import serial
 
 
 TOPIC = "serialhub/bench/events"
+MQTT_DRAIN_TIMEOUT = 45
+MQTT_DELIVERY_GRACE = 5
+
+
+class RunResult(NamedTuple):
+    run_id: str
+    count: int
+    queue_drops: int
+    drain_status: str
+    published: int | None = None
+    publish_failures: int | None = None
 
 
 def configuration(path):
@@ -67,12 +79,14 @@ def start_mqtt(config, host_override, observed):
     return client
 
 
-def receive(port, provision, captured):
+def receive(port, provision, captured, diagnostics):
     if provision:
         port.write(provision)
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             line = port.readline().strip()
+            if line.startswith(b"# DIAG "):
+                diagnostics.write(line + b"\n")
             if line == b"# CONFIG_OK":
                 break
             if line.startswith(b"# CONFIG_"):
@@ -83,6 +97,8 @@ def receive(port, provision, captured):
     deadline = time.monotonic() + 60
     retry_at = 0.0
     run_start = None
+    queue_drops = None
+    tracking = False
     data = bytearray()
     while time.monotonic() < deadline:
         now = time.monotonic()
@@ -98,20 +114,71 @@ def receive(port, provision, captured):
             data = bytearray(tail)
             line = bytes(raw).rstrip(b"\r")
             observed_at = time.perf_counter_ns()
-            if line.startswith(b"# STARTED "):
+            if line.startswith((b"# DIAG ", b"# STARTED ", b"# DONE ",
+                                b"# MQTT_TRACKING ", b"# MQTT_DRAINED ")):
+                diagnostics.write(line + b"\n")
+            if line.startswith(b"# STARTED ") and run_start is None:
                 _, _, run, count = line.split()
                 run_start = run.decode(), int(count)
                 deadline = time.monotonic() + 45
-            elif run_start and line.startswith(b"# DONE "):
+            elif run_start and line.startswith(b"# MQTT_TRACKING "):
+                if line == f"# MQTT_TRACKING {run_start[0]}".encode():
+                    tracking = bool(provision)
+            elif run_start and queue_drops is None and line.startswith(b"# DONE "):
                 _, _, run, count, skipped = line.split()
                 if (run.decode(), int(count)) != run_start:
                     raise RuntimeError("ESP reported a different run at completion")
-                return *run_start, int(skipped)
-            elif run_start and not line.startswith(b"# "):
+                queue_drops = int(skipped)
+                if not tracking:
+                    return RunResult(*run_start, queue_drops, "legacy" if provision else "disabled")
+                deadline = time.monotonic() + MQTT_DRAIN_TIMEOUT
+            elif queue_drops is not None and line.startswith(b"# MQTT_DRAINED "):
+                _, _, run, published, failed = line.split()
+                finished, failures = int(published), int(failed)
+                if (run.decode() != run_start[0] or min(queue_drops, finished, failures) < 0
+                        or queue_drops + finished + failures != run_start[1]):
+                    raise RuntimeError("ESP reported inconsistent MQTT drain counts")
+                return RunResult(*run_start, queue_drops, "drained", finished, failures)
+            elif run_start and queue_drops is None and not line.startswith(b"# "):
                 captured.append((observed_at, line))
         if len(data) > 4096:
             data.clear()
+    if queue_drops is not None:
+        return RunResult(*run_start, queue_drops, "timeout")
     raise TimeoutError("ESP did not finish the run; check the COM port and MQTT reachability")
+
+
+def wait_for_mqtt(result, observed):
+    if result.drain_status == "legacy":
+        time.sleep(2)
+        return
+    if result.drain_status != "drained":
+        return
+    # A successful QoS 0 write is local to the ESP. Give the broker and
+    # subscriber time to deliver the final records before measuring the gap.
+    deadline = time.monotonic() + MQTT_DELIVERY_GRACE
+    matched_sequences = set()
+    offset = 0
+    while time.monotonic() < deadline:
+        batch = observed[offset:]
+        offset += len(batch)
+        for _, wire in batch:
+            frame = decode_frame(wire)
+            if frame and frame.get("run") == result.run_id:
+                seq = frame.get("seq")
+                if type(seq) is int and 0 <= seq < result.count:
+                    matched_sequences.add(seq)
+        if len(matched_sequences) == result.count:
+            return
+        time.sleep(0.05)
+
+
+def decode_frame(wire):
+    try:
+        frame = json.loads(wire)
+    except (ValueError, UnicodeError):
+        return None
+    return frame if isinstance(frame, dict) else None
 
 
 def index_records(observed, run, count, output):
@@ -119,17 +186,15 @@ def index_records(observed, run, count, output):
     invalid = duplicates = 0
     with output.open("w", encoding="utf-8") as file:
         for received_ns, wire in observed:
-            try:
-                frame = json.loads(wire)
-                if not isinstance(frame, dict):
-                    raise ValueError
-                if frame.get("run") != run:
-                    continue
-                seq = frame.get("seq")
-                source = frame.get("source_us")
-                if type(seq) is not int or not 0 <= seq < count or type(source) is not int or source < 0:
-                    raise ValueError
-            except (ValueError, UnicodeError):
+            frame = decode_frame(wire)
+            if frame is None:
+                invalid += 1
+                continue
+            if frame.get("run") != run:
+                continue
+            seq = frame.get("seq")
+            source = frame.get("source_us")
+            if type(seq) is not int or not 0 <= seq < count or type(source) is not int or source < 0:
                 invalid += 1
                 continue
             file.write(json.dumps({"received_ns": received_ns, "frame": frame}) + "\n")
@@ -147,21 +212,23 @@ def run(args):
     mqtt_rx = []
     mqtt = start_mqtt(network, args.broker_client_host, mqtt_rx) if network else None
     try:
-        with serial.Serial(port=None, baudrate=921600, timeout=0.1, write_timeout=2) as port:
+        with (serial.Serial(port=None, baudrate=921600, timeout=0.1, write_timeout=2) as port,
+              (args.output / "diagnostics.log").open("wb") as diagnostics):
             port.dtr = False
             port.rts = False
             port.port = args.port
             port.open()
             time.sleep(1)
             port.reset_input_buffer()
-            run_id, count, queue_drops = receive(port, wire_config, uart)
+            result = receive(port, wire_config, uart, diagnostics)
             if mqtt:
-                time.sleep(2)
+                wait_for_mqtt(result, mqtt_rx)
     finally:
         if mqtt:
             mqtt.disconnect()
             mqtt.loop_stop()
 
+    run_id, count, queue_drops = result.run_id, result.count, result.queue_drops
     serial_map, serial_invalid, serial_duplicates = index_records(
         uart, run_id, count, args.output / "serial.jsonl")
     summary = {
@@ -177,6 +244,9 @@ def run(args):
         different = sum(serial_map[seq][1] != mqtt_map[seq][1] for seq in shared)
         delta = sorted((mqtt_map[seq][0] - serial_map[seq][0]) / 1e6 for seq in shared)
         summary.update(
+            firmware_mqtt_drain_status=result.drain_status,
+            firmware_mqtt_publish_successes=result.published,
+            firmware_mqtt_publish_failures=result.publish_failures,
             mqtt_received=len(mqtt_map), mqtt_missing=count - len(mqtt_map),
             mqtt_invalid=mqtt_invalid, mqtt_duplicates=mqtt_duplicates,
             matched=len(shared), payload_differences=different,
@@ -187,7 +257,8 @@ def run(args):
             ),
         )
         passed = passed and len(mqtt_map) == count and not (
-            different or mqtt_invalid or mqtt_duplicates or queue_drops)
+            different or mqtt_invalid or mqtt_duplicates or queue_drops
+            or result.publish_failures or result.drain_status == "timeout")
     summary["passed"] = passed
     report = json.dumps(summary, indent=2) + "\n"
     (args.output / "summary.json").write_text(report, encoding="utf-8")

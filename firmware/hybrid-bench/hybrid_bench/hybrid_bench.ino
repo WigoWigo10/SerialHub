@@ -57,8 +57,10 @@ void publishTask(void *) {
     if (!mqtt.connected()) {
       mqttReady.store(false);
       if (esp_timer_get_time() >= retryAt) {
-        if (network.mqttUser[0]) mqtt.connect(clientId, network.mqttUser, network.mqttPassword);
-        else mqtt.connect(clientId);
+        const bool connected = network.mqttUser[0]
+            ? mqtt.connect(clientId, network.mqttUser, network.mqttPassword)
+            : mqtt.connect(clientId);
+        if (connected) socket.setNoDelay(true);
         retryAt = esp_timer_get_time() + 2000000;
       }
       delay(10);
@@ -105,6 +107,7 @@ void configure(char *arguments) {
   network.port = static_cast<uint16_t>(port);
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.begin(network.ssid, network.password);
   memset(network.password, 0, sizeof(network.password));

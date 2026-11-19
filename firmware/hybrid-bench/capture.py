@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import statistics
 import threading
 import time
@@ -174,13 +175,14 @@ def run(args):
             mqtt_rx, run_id, count, args.output / "mqtt.jsonl")
         shared = serial_map.keys() & mqtt_map.keys()
         different = sum(serial_map[seq][1] != mqtt_map[seq][1] for seq in shared)
-        delta = [(mqtt_map[seq][0] - serial_map[seq][0]) / 1e6 for seq in shared]
+        delta = sorted((mqtt_map[seq][0] - serial_map[seq][0]) / 1e6 for seq in shared)
         summary.update(
             mqtt_received=len(mqtt_map), mqtt_missing=count - len(mqtt_map),
             mqtt_invalid=mqtt_invalid, mqtt_duplicates=mqtt_duplicates,
             matched=len(shared), payload_differences=different,
             host_arrival_delta_ms=(
-                {"min": min(delta), "median": statistics.median(delta), "max": max(delta)}
+                {"min": delta[0], "median": statistics.median(delta),
+                 "p95": delta[math.ceil(len(delta) * 0.95) - 1], "max": delta[-1]}
                 if delta else None
             ),
         )

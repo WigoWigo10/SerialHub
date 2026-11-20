@@ -107,3 +107,15 @@ São testes TLS reais em sockets de loopback, não apenas cancelamentos/transpor
 Permanecem pendentes inspeção visual da GUI atual, diálogos de certificados e conexão completa MQTT/WS/WSS com broker controlado, incluindo seus caminhos e respostas de upgrade. Não se validou uma cadeia pública usando raízes Windows contra um servidor externo. O teste de raízes da plataforma permite erro explícito em ambientes sem trust store utilizável; não aprova fallback.
 
 A infraestrutura local de handshake não altera trust store, não instala drivers e não abre portas Serial. Fixtures expiram em 2040 e deverão ser renovadas para manter esses testes válidos. Não foram modificados nem testados novamente núcleo/CLI Serial, pois esta correção não os altera. Cancelamento/sessões A03 e atualização geral de dependências continuam fora do escopo.
+
+## Complementação com Mosquitto local
+
+Na raiz do repositório, execute com Paho MQTT 2.1 e Mosquitto com TLS e WebSockets. O script cria quatro listeners de loopback, usa os certificados de teste do repositório e encerra sua instância ao terminar.
+
+```powershell
+python -B scripts/mqtt_loopback.py --mosquitto 'C:/Program Files/mosquitto/mosquitto.exe'
+```
+
+Em 19/11/2026, no Windows com Mosquitto 2.1.2, o construtor de transporte do SerialHub foi exercitado com o cliente Rust em TLS, mTLS, WS e WSS. Para cada modo, o teste confirmou conexão, assinatura e entrega dos bytes de uma publicação QoS 1 com PUBACK. O assinante recebeu o LWT da sessão interrompida e a sessão encerrada por MQTT DISCONNECT não o publicou. No mesmo ambiente, a rajada TLS entregou 2.000 de 2.000 mensagens de 1.024 bytes em 32 tópicos, com sequência e bytes conferidos por clientes Paho.
+
+Essa integração cobre o cliente e o broker. Permanecem pendentes a interação com os diálogos e perfis no WebView2, o ensaio prolongado da GUI e o uso da cadeia pública do sistema operacional.

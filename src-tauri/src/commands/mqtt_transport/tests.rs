@@ -444,3 +444,140 @@ fn loopback_mutual_tls_accepts_matching_client_and_rejects_missing_identity() {
         true
     ));
 }
+
+async fn broker_packet(
+    events: &mut rumqttc::EventLoop,
+    expected: impl Fn(&rumqttc::Packet) -> bool,
+) -> rumqttc::Packet {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let rumqttc::Event::Incoming(packet) = events.poll().await.unwrap() {
+                if expected(&packet) {
+                    return packet;
+                }
+            }
+        }
+    })
+    .await
+    .expect("broker packet deadline")
+}
+
+async fn local_client(
+    id: &str,
+    mode: MqttTransport,
+    port: u16,
+    mutual: bool,
+    will: Option<rumqttc::LastWill>,
+) -> (rumqttc::AsyncClient, rumqttc::EventLoop) {
+    let ca = mode.secure().then(|| fixture("ca.pem"));
+    let cert = mutual.then(|| fixture("client.pem"));
+    let key = mutual.then(|| fixture("client-key.pem"));
+    let mut config = options(
+        id,
+        "localhost",
+        port,
+        mode,
+        ca.as_deref(),
+        cert.as_deref(),
+        key.as_deref(),
+        Some("/mqtt"),
+    )
+    .unwrap();
+    if let Some(will) = will {
+        config.set_last_will(will);
+    }
+    let (client, mut events) = rumqttc::AsyncClient::new(config, 8);
+    let ack = broker_packet(&mut events, |packet| {
+        matches!(packet, rumqttc::Packet::ConnAck(_))
+    })
+    .await;
+    assert!(
+        matches!(ack, rumqttc::Packet::ConnAck(ack) if ack.code == rumqttc::ConnectReturnCode::Success)
+    );
+    (client, events)
+}
+
+#[tokio::test]
+#[ignore = "requires the isolated Mosquitto started by scripts/mqtt_loopback.py"]
+async fn mosquitto_transport_and_lwt() {
+    use rumqttc::{Event, LastWill, Outgoing, Packet, QoS};
+
+    for (name, mode, mutual) in [
+        ("TLS", MqttTransport::Tls, false),
+        ("MTLS", MqttTransport::Tls, true),
+        ("WS", MqttTransport::Ws, false),
+        ("WSS", MqttTransport::Wss, false),
+    ] {
+        let port = std::env::var(format!("SERIALHUB_TEST_{name}_PORT"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let topic = format!("serialhub/local-test/{name}");
+        let will_topic = format!("{topic}/will");
+        let (subscriber, mut incoming) = local_client("subscriber", mode, port, mutual, None).await;
+        subscriber
+            .subscribe(format!("{topic}/#"), QoS::AtLeastOnce)
+            .await
+            .unwrap();
+        let ack = broker_packet(&mut incoming, |packet| matches!(packet, Packet::SubAck(_))).await;
+        assert!(
+            matches!(ack, Packet::SubAck(ack) if ack.return_codes == [rumqttc::SubscribeReasonCode::Success(QoS::AtLeastOnce)])
+        );
+
+        let normal_will = LastWill::new(&will_topic, b"graceful".to_vec(), QoS::AtLeastOnce, false);
+        let (publisher, mut outgoing) =
+            local_client("publisher", mode, port, mutual, Some(normal_will)).await;
+        let payload = vec![0, 1, 0xff, 0xc3, 0xa9];
+        publisher
+            .publish(&topic, QoS::AtLeastOnce, false, payload.clone())
+            .await
+            .unwrap();
+        broker_packet(&mut outgoing, |packet| matches!(packet, Packet::PubAck(_))).await;
+        let received =
+            broker_packet(&mut incoming, |packet| matches!(packet, Packet::Publish(_))).await;
+        assert!(
+            matches!(received, Packet::Publish(message) if message.topic == topic && message.payload.as_ref() == payload)
+        );
+
+        publisher.disconnect().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if matches!(
+                    outgoing.poll().await.unwrap(),
+                    Event::Outgoing(Outgoing::Disconnect)
+                ) {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        drop(outgoing);
+        // Leave the subscriber listening through the abrupt close. A will from
+        // the graceful session would create an extra publication.
+        let abrupt_will = LastWill::new(&will_topic, b"offline".to_vec(), QoS::AtLeastOnce, false);
+        let (_, abrupt) = local_client("abrupt", mode, port, mutual, Some(abrupt_will)).await;
+        drop(abrupt);
+        let received =
+            broker_packet(&mut incoming, |packet| matches!(packet, Packet::Publish(_))).await;
+        assert!(
+            matches!(received, Packet::Publish(message) if message.topic == will_topic && message.payload.as_ref() == b"offline")
+        );
+        let extra = tokio::time::timeout(Duration::from_millis(350), async {
+            loop {
+                if matches!(
+                    incoming.poll().await.unwrap(),
+                    Event::Incoming(Packet::Publish(_))
+                ) {
+                    break;
+                }
+            }
+        })
+        .await;
+        assert!(
+            extra.is_err(),
+            "{name}: graceful disconnect unexpectedly emitted a will"
+        );
+        eprintln!("{name}: connect, subscribe, byte-for-byte QoS 1 and LWT passed");
+    }
+}

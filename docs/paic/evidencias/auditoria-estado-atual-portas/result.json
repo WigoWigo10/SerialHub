@@ -1,0 +1,6 @@
+{
+  "mode": "inventory",
+  "passed": true,
+  "native_monitor_test": false,
+  "meaning": "Read-only inventory; not a serial test."
+}

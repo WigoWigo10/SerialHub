@@ -121,4 +121,8 @@ Novos arquivos desta auditoria: este documento, `evidencias/auditoria-estado-atu
 
 Ordem sugerida: corrigir A01 e A02 com regressões determinísticas; dar às sessões MQTT cancelamento e isolamento equivalentes aos do Serial; atualizar dependências dev em mudança separada com reprodução limpa; corrigir classificação Unknown/HEX e definir retenção MQTT.
 
+## Atualização da auditoria de dependências em 19/11/2026
+
+`npm audit --json` retornou 11 entradas (sete altas, três moderadas e uma baixa). Vite e PostCSS são dependências diretas listadas. `npm audit --omit=dev --json` retornou zero entradas. As contagens são do registry e do lockfile examinados nessa data. A avaliação por advisory e a atualização da cadeia de desenvolvimento ficam para uma mudança específica. O comando `cargo audit` estava indisponível e os lockfiles Rust ainda precisam de verificação.
+
 Continuam pendentes ensaios com par virtual confirmado (recepção binária, duração, Ctrl+C Windows nativo e código 130, reabertura, conexão/reconexão na GUI, perda de conexão e gravação durante encerramento), integração com broker local controlado para TLS/cancelamento/sessões e testes manuais de diálogo/clipboard. Inventário e testes simulados não aprovam esses cenários nativos. Nenhum equipamento físico foi utilizado, nenhum driver instalado e nenhum commit/push/merge realizado.

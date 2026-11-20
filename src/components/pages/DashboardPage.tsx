@@ -31,6 +31,11 @@ interface SystemStats {
   bat_percent: number;
   is_charging: boolean;
   net_name: string;
+  net_interfaces?: {
+    name: string;
+    rx_bytes_per_second: number | null;
+    tx_bytes_per_second: number | null;
+  }[];
   bt_detected: boolean;
 }
 
@@ -192,6 +197,7 @@ export function DashboardPage() {
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(2)} KB`;
     return `${(bytes / 1048576).toFixed(2)} MB`;
   };
+  const formatNetworkRate = (rate: number | null) => rate === null ? "—" : `${formatDataSize(Math.round(rate))}/s`;
 
   //const getLoadColor = (value: number) => {
     //if (value > 80) return "text-red-500";
@@ -345,7 +351,21 @@ export function DashboardPage() {
                             <Globe size={18} className="text-blue-500" />
                             <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{t('dash_network')}</span>
                         </div>
-                        <span className="text-xs font-mono text-slate-500 break-words" title={stats.net_name}>{stats.net_name}</span>
+                        {stats.net_interfaces?.length ? (
+                            <ul className="space-y-2" aria-label={t('dash_host_network_traffic')}>
+                                {stats.net_interfaces.map(({ name, rx_bytes_per_second, tx_bytes_per_second }) => (
+                                    <li key={name} className="text-xs text-slate-500 dark:text-slate-400">
+                                        <div className="break-words">{name}</div>
+                                        <div className="flex flex-wrap gap-x-3 font-mono tabular-nums">
+                                            <span>RX {formatNetworkRate(rx_bytes_per_second)}</span>
+                                            <span>TX {formatNetworkRate(tx_bytes_per_second)}</span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <span className="text-xs font-mono text-slate-500 break-words">{stats.net_name || "—"}</span>
+                        )}
                     </div>
                     <div className="h-px bg-slate-100 dark:bg-slate-800" />
                     <div className="flex items-center justify-between">

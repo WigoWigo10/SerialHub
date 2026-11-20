@@ -1,4 +1,51 @@
 use serde::Serialize;
+use std::collections::HashMap;
+use std::time::Duration;
+use sysinfo::{MacAddr, Networks};
+
+type NetworkCounters = HashMap<String, (MacAddr, u64, u64)>;
+
+#[derive(Serialize)]
+pub(crate) struct NetworkTraffic {
+    pub name: String,
+    pub rx_bytes_per_second: Option<f64>,
+    pub tx_bytes_per_second: Option<f64>,
+}
+
+pub(crate) fn network_traffic(
+    networks: &Networks,
+    previous: &mut NetworkCounters,
+    elapsed: Duration,
+) -> Vec<NetworkTraffic> {
+    let mut next = HashMap::with_capacity(networks.list().len());
+    let mut traffic = Vec::with_capacity(networks.list().len());
+    for (name, data) in networks.list() {
+        let counters = (
+            data.mac_address(),
+            data.total_received(),
+            data.total_transmitted(),
+        );
+        let baseline = previous.get(name).filter(|old| old.0 == counters.0);
+        traffic.push(NetworkTraffic {
+            name: name.clone(),
+            rx_bytes_per_second: baseline.and_then(|old| byte_rate(old.1, counters.1, elapsed)),
+            tx_bytes_per_second: baseline.and_then(|old| byte_rate(old.2, counters.2, elapsed)),
+        });
+        next.insert(name.clone(), counters);
+    }
+    *previous = next;
+    traffic.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+    traffic
+}
+
+fn byte_rate(previous: u64, current: u64, elapsed: Duration) -> Option<f64> {
+    if elapsed.is_zero() {
+        return None;
+    }
+    current
+        .checked_sub(previous)
+        .map(|bytes| bytes as f64 / elapsed.as_secs_f64())
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -149,6 +196,15 @@ pub fn recognized_npu(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interface_rate_uses_elapsed_time_and_distinguishes_reset_from_idle() {
+        let interval = Duration::from_millis(1250);
+        assert_eq!(byte_rate(200, 450, interval), Some(200.0));
+        assert_eq!(byte_rate(450, 450, interval), Some(0.0));
+        assert_eq!(byte_rate(450, 15, interval), None);
+        assert_eq!(byte_rate(0, 50, Duration::ZERO), None);
+    }
 
     #[test]
     fn integrated_and_dedicated_use_driver_property_not_vendor() {

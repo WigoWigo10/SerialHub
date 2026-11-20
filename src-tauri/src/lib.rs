@@ -2,8 +2,8 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
-use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use std::time::{Duration, Instant};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, Networks, RefreshKind, System};
 use tauri::{Emitter, Manager};
 
 #[allow(non_camel_case_types)]
@@ -163,9 +163,20 @@ pub fn run() {
                         .with_memory(MemoryRefreshKind::everything())
                 );
 
+                let mut networks = Networks::new();
+                let mut network_counters = HashMap::new();
+                let mut network_traffic = Vec::new();
+                let mut last_network_sample: Option<Instant> = None;
                 loop {
                     sys.refresh_cpu_all();
                     sys.refresh_memory();
+                    if last_network_sample.is_none_or(|last| last.elapsed() >= Duration::from_secs(1)) {
+                        networks.refresh_list();
+                        let now = Instant::now();
+                        let elapsed = last_network_sample.map_or(Duration::ZERO, |last| now - last);
+                        network_traffic = hardware::network_traffic(&networks, &mut network_counters, elapsed);
+                        last_network_sample = Some(now);
+                    }
 
                     // CPU Stats
                     let cpus = sys.cpus();
@@ -215,6 +226,7 @@ pub fn run() {
                         "bat_percent": bat_percent,
                         "is_charging": is_charging,
                         "net_name": net_adapter_name,
+                        "net_interfaces": network_traffic,
                         "bt_detected": bt_detected
                     });
 

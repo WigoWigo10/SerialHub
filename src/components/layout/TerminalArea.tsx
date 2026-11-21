@@ -1,6 +1,6 @@
 import { useShallow } from "zustand/react/shallow";
-import { useEffect, useRef, useState, useMemo } from "react";
-import { Terminal } from "@xterm/xterm";
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { listen } from "@tauri-apps/api/event";
 import { 
@@ -22,6 +22,33 @@ import toast from "react-hot-toast";
 interface ZoomFeedback {
   visible: boolean;
   size: number;
+}
+
+function terminalTheme(theme: 'dark' | 'light'): ITheme {
+  const isDark = theme === 'dark';
+  return {
+    background: isDark ? '#020617' : '#ffffff',
+    foreground: isDark ? '#f8fafc' : '#0f172a',
+    cursor: isDark ? '#ffffff' : '#000000',
+    cursorAccent: isDark ? '#000000' : '#ffffff',
+    selectionBackground: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(59, 130, 246, 0.25)',
+    black: '#000000',
+    red: isDark ? '#ff5555' : '#ef4444',
+    green: isDark ? '#50fa7b' : '#10b981',
+    yellow: isDark ? '#f1fa8c' : '#f59e0b',
+    blue: isDark ? '#bd93f9' : '#3b82f6',
+    magenta: isDark ? '#ff79c6' : '#d946ef',
+    cyan: isDark ? '#8be9fd' : '#06b6d4',
+    white: '#bfbfbf',
+    brightBlack: '#4d4d4d',
+    brightRed: isDark ? '#ff6e6e' : '#f87171',
+    brightGreen: isDark ? '#69ff94' : '#4ade80',
+    brightYellow: isDark ? '#ffffa5' : '#fcd34d',
+    brightBlue: isDark ? '#d6acff' : '#60a5fa',
+    brightMagenta: isDark ? '#ff92df' : '#e879f9',
+    brightCyan: isDark ? '#a4ffff' : '#22d3ee',
+    brightWhite: '#e6e6e6',
+  };
 }
 
 export function TerminalArea() {
@@ -83,35 +110,9 @@ export function TerminalArea() {
   //const tempTimeoutRef = useRef<number | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => {
-    if (!xtermRef.current) return;
-    const isDark = theme === 'dark';
-
-    xtermRef.current.options.theme = {
-      background: isDark ? '#020617' : '#ffffff',
-      foreground: isDark ? '#f8fafc' : '#0f172a',
-      cursor: isDark ? '#ffffff' : '#000000',
-      cursorAccent: isDark ? '#000000' : '#ffffff',
-      selectionBackground: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(59, 130, 246, 0.25)',
-      black: '#000000',
-      red: isDark ? '#ff5555' : '#ef4444',
-      green: isDark ? '#50fa7b' : '#10b981',
-      yellow: isDark ? '#f1fa8c' : '#f59e0b',
-      blue: isDark ? '#bd93f9' : '#3b82f6',
-      magenta: isDark ? '#ff79c6' : '#d946ef',
-      cyan: isDark ? '#8be9fd' : '#06b6d4',
-      white: '#bfbfbf',
-      brightBlack: '#4d4d4d',
-      brightRed: isDark ? '#ff6e6e' : '#f87171',
-      brightGreen: isDark ? '#69ff94' : '#4ade80',
-      brightYellow: isDark ? '#ffffa5' : '#fcd34d',
-      brightBlue: isDark ? '#d6acff' : '#60a5fa',
-      brightMagenta: isDark ? '#ff92df' : '#e879f9',
-      brightCyan: isDark ? '#a4ffff' : '#22d3ee',
-      brightWhite: isDark ? '#e6e6e6' : '#e6e6e6',
-    };
-
-    xtermRef.current.refresh(0, xtermRef.current.rows - 1);
+  useLayoutEffect(() => {
+    const term = xtermRef.current;
+    if (term) term.options.theme = terminalTheme(theme);
   }, [theme]);
 
   const currentStatus = useMemo(() => {
@@ -207,17 +208,13 @@ export function TerminalArea() {
 
   useEffect(() => {
     if (!terminalRef.current) return;
-    const isDark = useSettingsStore.getState().theme === 'dark';
 
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 14,
       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-      theme: { 
-          background: isDark ? '#020617' : '#ffffff', 
-          foreground: isDark ? '#f8fafc' : '#0f172a',
-          selectionBackground: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(59, 130, 246, 0.25)', 
-      },
+      theme: terminalTheme(useSettingsStore.getState().theme),
+      minimumContrastRatio: 4.5,
       convertEol: true, 
       scrollback: 10000,
       disableStdin: false, 

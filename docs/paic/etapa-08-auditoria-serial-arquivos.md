@@ -123,3 +123,9 @@ Logging continua síncrono. Disco/driver bloqueado pode atrasar leitura e descon
 Flush e descarte do File não garantem persistência física em disco. Erros do fechamento implícito do sistema operacional não são retornados por Drop. Saída normal tenta finalizar e informa erro em stderr; encerramento forçado e perda de energia não têm garantia. Nenhuma mensagem afirma que flush torna o arquivo fisicamente durável.
 
 Decisões que podem exigir definição de produto, sem bloquear estas correções: oferecer captura RX binária pura separada do log diagnóstico RX/TX; criar exportação visual e escolher seu formato; reformatar retrospectivamente o histórico ao alternar modos; manter contadores acumulados após desconectar; mudar a política atual de REC continuar aberto entre conexões. Não foram introduzidas essas funcionalidades nem reenvio automático após falha parcial.
+
+## Paleta do terminal na troca de tema
+
+O xterm iniciava com as cores ANSI padrão e recebia a paleta completa do SerialHub somente na troca de tema. Ao voltar ao tema inicial, o texto colorido podia ter uma aparência diferente. A criação e a troca agora usam a mesma paleta, com ajuste de contraste do xterm configurado em 4,5:1. A troca aplica as opções à instância existente do terminal.
+
+Um teste do componente com xterm simulado reproduziu a diferença e passou após a correção. A suíte Node passou com 163 testes e `npm run build` compilou o frontend. A inspeção visual ficou pendente.

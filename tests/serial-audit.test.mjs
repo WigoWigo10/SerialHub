@@ -180,3 +180,83 @@ test('TX has one global counter owner and terminal cleanup releases its observer
   assert.match(terminal, /term\.write\('', \(\) =>/); assert.match(terminal, /term\.reset\(\)/);
   assert.doesNotMatch(terminal, /term\.clear\(|new TextDecoder/);
 });
+
+test('terminal uses the same readable palette at startup and after reversing the theme', async () => {
+  const source = await readFile(new URL('../src/components/layout/TerminalArea.tsx', import.meta.url), 'utf8');
+  const { outputText } = ts.transpileModule(source, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX,
+  } });
+  let theme = 'dark';
+  const root = { addEventListener() {}, removeEventListener() {} };
+  const refs = [], effects = [], layoutEffects = [], terminals = [];
+  let refIndex, effectIndex, layoutIndex;
+  const queueEffect = (queue, index, run, deps) => {
+    const previous = queue[index];
+    if (!previous || deps?.some((value, i) => value !== previous.deps?.[i])) {
+      queue[index] = { run, deps, pending: true };
+    }
+  };
+  const react = {
+    useRef(value) {
+      const index = refIndex++;
+      return refs[index] ??= { current: index === 0 ? root : value };
+    },
+    useState: value => [value, () => {}],
+    useMemo: callback => callback(),
+    useLayoutEffect: (run, deps) => queueEffect(layoutEffects, layoutIndex++, run, deps),
+    useEffect: (run, deps) => queueEffect(effects, effectIndex++, run, deps),
+  };
+  const settings = Object.assign(select => select({ theme }), { getState: () => ({ theme }) });
+  class MockTerminal {
+    constructor(options) { this.options = options; this.rows = 24; terminals.push(this); }
+    open() {}
+    loadAddon() {}
+    onKey() {}
+    onScroll() {}
+    refresh() {}
+    attachCustomKeyEventHandler() {}
+    dispose() {}
+  }
+  const modules = {
+    react,
+    'react/jsx-runtime': { jsx() {}, jsxs() {} },
+    'zustand/react/shallow': { useShallow: select => select },
+    '@xterm/xterm': { Terminal: MockTerminal },
+    '@xterm/addon-fit': { FitAddon: class { fit() {} } },
+    '../../stores/settingsStore': { useSettingsStore: settings },
+    '../../hooks/useLanguage': { useLanguage: () => ({ t: key => key }) },
+    '../../lib/serialPresentation': { SerialPresentation, listenSafely: () => () => {} },
+  };
+  const exports = {};
+  const window = { addEventListener() {}, removeEventListener() {} };
+  const ResizeObserver = class { observe() {} disconnect() {} };
+  new Function('require', 'exports', 'window', 'ResizeObserver', outputText)(
+    name => modules[name] ?? {}, exports, window, ResizeObserver,
+  );
+  const render = () => {
+    refIndex = effectIndex = layoutIndex = 0;
+    exports.TerminalArea();
+    for (const effect of [...layoutEffects, ...effects]) {
+      if (effect.pending) {
+        effect.pending = false;
+        effect.cleanup = effect.run();
+      }
+    }
+  };
+
+  try {
+    render();
+    const term = terminals[0];
+    const initial = { ...term.options.theme };
+    theme = 'light';
+    render();
+    assert.equal(term.options.theme.background, '#ffffff');
+    theme = 'dark';
+    render();
+    assert.deepEqual(term.options.theme, initial, 'startup and round trip must use the same ANSI palette');
+    assert.equal(term.options.minimumContrastRatio, 4.5, 'guard against low-contrast ANSI text');
+    assert.equal(terminals.length, 1, 'keep the original terminal and its history');
+  } finally {
+    for (const effect of [...layoutEffects, ...effects]) effect.cleanup?.();
+  }
+});

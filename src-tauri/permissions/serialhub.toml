@@ -1,0 +1,27 @@
+[[permission]]
+identifier = "allow-serialhub"
+description = "Exposes SerialHub commands to the local main webview."
+commands.allow = [
+  "display_refresh_rate",
+  "bench_capture_status",
+  "start_bench_capture",
+  "stop_bench_capture",
+  "list_ports",
+  "open_port",
+  "close_port",
+  "serial_connection_state",
+  "write_serial",
+  "set_control_pin",
+  "start_recording",
+  "stop_recording",
+  "serial_recording_state",
+  "mqtt_begin_attempt",
+  "mqtt_connection_state",
+  "cancel_mqtt",
+  "connect_mqtt",
+  "disconnect_mqtt",
+  "publish_mqtt",
+  "subscribe_mqtt",
+  "unsubscribe_mqtt",
+  "check_file_exists",
+]

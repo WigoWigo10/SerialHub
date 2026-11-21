@@ -38,8 +38,8 @@ type Fake = (
     Arc<AtomicUsize>,
 );
 fn fake() -> Fake {
-    let (client, requests) =
-        AsyncClient::new(rumqttc::MqttOptions::new("test", "localhost", 1883), 8);
+    let options = rumqttc::MqttOptions::new("test", rumqttc::Broker::tcp("localhost", 1883));
+    let (client, requests) = AsyncClient::builder(options).capacity(8).build();
     let (send, input) = mpsc::unbounded_channel();
     let (notify, polled) = oneshot::channel();
     let drops = Arc::new(AtomicUsize::new(0));
@@ -315,16 +315,15 @@ async fn operations_require_connected_identity_and_queue_backpressure_never_bloc
     for _ in 0..8 {
         service
             .operation(id, |client| {
-                client.try_publish("topic", QoS::AtMostOnce, false, b"data".to_vec())
+                client.try_publish("topic", b"data", rumqttc::PublishOptions::at_most_once())
             })
             .unwrap();
     }
     assert!(service
         .operation(id, |client| client.try_publish(
             "topic",
-            QoS::AtMostOnce,
-            false,
-            b"data".to_vec()
+            b"data",
+            rumqttc::PublishOptions::at_most_once()
         ))
         .is_err());
     service.cancel(id).await.unwrap();
@@ -423,7 +422,7 @@ async fn loopback_real_mqtt_connect_cancel_and_reconnect() {
                 None,
                 None,
             )?;
-            let (client, events) = AsyncClient::new(options, 8);
+            let (client, events) = AsyncClient::builder(options).capacity(8).build();
             Ok(SessionIo {
                 client,
                 events: Box::new(events),

@@ -1,6 +1,6 @@
 export type DashboardRefreshRate = 'auto' | 15 | 30 | 60 | 120;
 export const DASHBOARD_REFRESH_RATES: DashboardRefreshRate[] = ['auto', 15, 30, 60, 120];
-export const HARDWARE_SAMPLE_MS = 500;
+export const DASHBOARD_BAR_ANIMATION_MS = 160;
 
 export function normalizeRefreshRate(value: unknown): DashboardRefreshRate {
   return DASHBOARD_REFRESH_RATES.includes(value as DashboardRefreshRate)
@@ -24,7 +24,7 @@ interface FrameClock {
   cancel: (id: number) => void;
 }
 
-// FPS controls presentation only. Values between native samples are interpolated.
+// FPS only controls the short transition of the memory bar.
 export function animateValue(
   from: number, to: number, rate: DashboardRefreshRate,
   publish: (value: number) => void, clock: FrameClock,
@@ -36,8 +36,8 @@ export function animateValue(
   let stopped = false;
   const tick = (time: number) => {
     if (stopped) return;
-    const progress = Math.min(1, Math.max(0, (time - started) / HARDWARE_SAMPLE_MS));
-    const slot = interval === 0 ? lastSlot + 1 : Math.floor((time - started + 0.01) / interval);
+    const progress = Math.min(1, Math.max(0, (time - started) / DASHBOARD_BAR_ANIMATION_MS));
+    const slot = Math.floor((time - started + 0.01) / interval);
     if (progress === 1 || slot > lastSlot) {
       publish(from + (to - from) * progress);
       // Keep the requested cadence without accumulating rounding drift.

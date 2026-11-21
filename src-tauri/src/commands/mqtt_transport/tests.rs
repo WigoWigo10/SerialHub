@@ -60,7 +60,13 @@ fn all_four_modes_are_explicit_and_independent_of_port() {
                     | (MqttTransport::Ws, Transport::Ws)
                     | (MqttTransport::Wss, Transport::Wss(_))
             ));
-            assert_eq!(result.broker_address().1, port);
+            if let Some((host, actual_port)) = result.broker().tcp_address() {
+                assert_eq!((host, actual_port), ("localhost", port));
+            } else {
+                let scheme = if mode.secure() { "wss" } else { "ws" };
+                let expected = format!("{scheme}://localhost:{port}/mqtt");
+                assert_eq!(result.broker().websocket_url(), Some(expected.as_str()));
+            }
         }
     }
 }
@@ -78,7 +84,7 @@ fn hostname_and_websocket_path_are_preserved_without_ipv4_replacement() {
         None,
     )
     .unwrap();
-    assert_eq!(tls.broker_address(), ("broker.example".to_string(), 1883));
+    assert_eq!(tls.broker().tcp_address(), Some(("broker.example", 1883)));
     let ws = options(
         "test",
         "broker.example",
@@ -91,8 +97,8 @@ fn hostname_and_websocket_path_are_preserved_without_ipv4_replacement() {
     )
     .unwrap();
     assert_eq!(
-        ws.broker_address().0,
-        "wss://broker.example:8883/custom?site=1"
+        ws.broker().websocket_url(),
+        Some("wss://broker.example:8883/custom?site=1")
     );
     let ipv6 = options(
         "test",
@@ -105,7 +111,7 @@ fn hostname_and_websocket_path_are_preserved_without_ipv4_replacement() {
         None,
     )
     .unwrap();
-    assert_eq!(ipv6.broker_address().0, "ws://[::1]:1883/mqtt");
+    assert_eq!(ipv6.broker().websocket_url(), Some("ws://[::1]:1883/mqtt"));
 }
 
 #[test]
@@ -486,7 +492,7 @@ async fn local_client(
     if let Some(will) = will {
         config.set_last_will(will);
     }
-    let (client, mut events) = rumqttc::AsyncClient::new(config, 8);
+    let (client, mut events) = rumqttc::AsyncClient::builder(config).capacity(8).build();
     let ack = broker_packet(&mut events, |packet| {
         matches!(packet, rumqttc::Packet::ConnAck(_))
     })
@@ -529,14 +535,18 @@ async fn mosquitto_transport_and_lwt() {
             local_client("publisher", mode, port, mutual, Some(normal_will)).await;
         let payload = vec![0, 1, 0xff, 0xc3, 0xa9];
         publisher
-            .publish(&topic, QoS::AtLeastOnce, false, payload.clone())
+            .publish(
+                &topic,
+                payload.clone(),
+                rumqttc::PublishOptions::at_least_once(),
+            )
             .await
             .unwrap();
         broker_packet(&mut outgoing, |packet| matches!(packet, Packet::PubAck(_))).await;
         let received =
             broker_packet(&mut incoming, |packet| matches!(packet, Packet::Publish(_))).await;
         assert!(
-            matches!(received, Packet::Publish(message) if message.topic == topic && message.payload.as_ref() == payload)
+            matches!(received, Packet::Publish(message) if message.topic.as_ref() == topic.as_bytes() && message.payload.as_ref() == payload)
         );
 
         publisher.disconnect().await.unwrap();
@@ -561,7 +571,7 @@ async fn mosquitto_transport_and_lwt() {
         let received =
             broker_packet(&mut incoming, |packet| matches!(packet, Packet::Publish(_))).await;
         assert!(
-            matches!(received, Packet::Publish(message) if message.topic == will_topic && message.payload.as_ref() == b"offline")
+            matches!(received, Packet::Publish(message) if message.topic.as_ref() == will_topic.as_bytes() && message.payload.as_ref() == b"offline")
         );
         let extra = tokio::time::timeout(Duration::from_millis(350), async {
             loop {

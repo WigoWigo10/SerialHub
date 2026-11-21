@@ -67,7 +67,13 @@ impl Events for EventLoop {
                     ack.code == rumqttc::ConnectReturnCode::Success,
                 )),
                 Event::Incoming(Packet::Publish(p)) => {
-                    Ok(Incoming::Message(p.topic, p.payload.to_vec(), p.qos as u8))
+                    let topic = std::str::from_utf8(&p.topic)
+                        .map_err(|_| "Tópico MQTT inválido em UTF-8".to_owned())?;
+                    Ok(Incoming::Message(
+                        topic.to_owned(),
+                        p.payload.to_vec(),
+                        p.qos as u8,
+                    ))
                 }
                 Event::Outgoing(rumqttc::Outgoing::Disconnect) => Ok(Incoming::Closed),
                 _ => Ok(Incoming::Other),

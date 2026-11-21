@@ -6,8 +6,15 @@
     "main"
   ],
   "permissions": [
-    "core:default",
-    "dialog:default",
-    "shell:default"
+    "allow-serialhub",
+    "core:app:allow-version",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://github.com/WigoWigo10/SerialHub" }]
+    }
   ]
 }

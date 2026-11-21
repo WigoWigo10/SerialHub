@@ -88,7 +88,7 @@ def main():
     if not args.mosquitto:
         parser.error("specify the Mosquitto executable using --mosquitto")
     executable = Path(args.mosquitto).resolve(strict=True)
-    listeners = {"TLS": "mqtt", "MTLS": "mqtt", "WS": "websockets", "WSS": "websockets"}
+    listeners = {"TLS": "mqtt", "MTLS": "mqtt", "WS": "websockets", "WSS": "websockets", "TCP": "mqtt"}
     with tempfile.TemporaryDirectory(prefix="serialhub-mqtt-") as directory:
         root = Path(directory)
         for name in ("ca.pem", "server.pem", "server-key.pem"):
@@ -104,7 +104,7 @@ def main():
                 ports.append(port)
                 env[f"SERIALHUB_TEST_{name}_PORT"] = str(port)
                 config.extend((f"listener {port} 127.0.0.1", f"protocol {protocol}"))
-                if name != "WS":
+                if name in ("TLS", "MTLS", "WSS"):
                     config.extend(("cafile ca.pem", "certfile server.pem", "keyfile server-key.pem"))
                 if name == "MTLS":
                     config.append("require_certificate true")
@@ -127,7 +127,7 @@ def main():
                 verify_broker_burst(ports[0], root)
                 result = subprocess.run(
                     ["cargo", "test", "--locked", "--manifest-path", "src-tauri/Cargo.toml",
-                     "mosquitto_transport_and_lwt", "--", "--ignored", "--nocapture"],
+                     "mosquitto_transport_", "--", "--ignored", "--nocapture"],
                     cwd=ROOT, env=env,
                 )
                 if result.returncode:

@@ -91,3 +91,16 @@ Passaram 45 testes do backend e 160 testes do frontend, além das compilações.
 A rajada MQTT local está disponível em `scripts/mqtt_loopback.py`. Ela verifica a entrega pelo broker a um assinante de referência Paho. A campanha de carga no terminal e no Dashboard precisa medir os processos e passar pelos componentes usados pelo usuário.
 
 Em 19/11/2026, o build de release no Windows mostrou taxas RX/TX que mudaram entre amostras no Dashboard. Os dados seguem os nomes e contadores retornados pelo sistema, que pode listar interfaces lógicas e filtros associados à mesma rede. Não some esses valores para obter o tráfego total. O instalador NSIS x64 foi gerado com `npm run tauri build -- --bundles nsis --ci --no-sign -- --locked`. A checagem abriu o executável do build diretamente. A instalação em ambiente limpo permanece pendente.
+## Capturas no aplicativo
+
+No **Dashboard**, use **Capturar métricas** para gerar `metrics.csv` e `summary.json`, ou **Captura híbrida** para gravar também `serial.jsonl`, `mqtt.jsonl` e `correlation.jsonl`. Na página **MQTT**, **REC MQTT** gera `mqtt.jsonl` e o resumo. Escolha a pasta pai. Cada execução cria uma subpasta nova com um identificador único. Use **Encerrar captura** para esvaziar a fila e gravar o resumo.
+
+O CSV contém amostras aproximadamente a cada segundo, com hora UTC, tempo monotônico, CPU e memória do host, do processo SerialHub e dos processos WebView descendentes identificados. O primeiro ponto de CPU fica vazio até haver uma medição anterior. A CPU de vários processos pode superar 100% de um núcleo lógico. Processos WebView compartilhados ou sem vínculo de descendência conhecido ficam sem atribuição. Os contadores de tráfego são acumulados na captura. O resumo divide os contadores pela duração efetiva para obter as vazões médias.
+
+O arquivo MQTT guarda hora de chegada, sessão, sequência, tópico, QoS e `payload_bytes` na ordem original. A gravação recebe as publicações antes do histórico da GUI. O arquivo Serial guarda RX e TX com os bytes originais por bloco. O resumo conta descartes da fila da gravação separadamente para Serial e MQTT, em blocos ou publicações. Esses descartes são distintos da retenção da interface. Uma falha de escrita é apresentada pela aplicação ao encerrar a captura.
+
+A correlação usa `run` e `seq` em cada objeto JSON. No Serial, a chegada é marcada no bloco que completa a linha LF ou CRLF. No MQTT, é a chegada da publicação ao backend. A diferença `mqtt_minus_serial_us` usa o relógio monotônico do mesmo computador. São registrados pares, eventos exclusivos, duplicatas e lacunas internas na faixa observada. A correlação limita-se a 100.000 chaves por captura. Os arquivos brutos continuam sendo gravados após esse limite.
+
+No **Monitor Serial**, **Analisar dados** ativa um gráfico para campos numéricos de objetos JSON ou colunas delimitadas por vírgula, ponto e vírgula ou tabulação. O analisador mantém as 300 amostras mais recentes, processa dados a partir da abertura do painel e reinicia a série ao trocar de sessão Serial.
+
+Para os ensaios sem placa, rode `cargo test --locked --manifest-path src-tauri/Cargo.toml bench_capture` e `node --test tests/serial-analyzer.test.mjs`. Para o broker real em loopback, rode `python -B scripts/mqtt_loopback.py --mosquitto 'C:/Program Files/mosquitto/mosquitto.exe'`.

@@ -1,3 +1,4 @@
+use crate::bench_capture::Capture;
 use crate::serial_recording::{transmit_reported, RecordingSnapshot};
 use crate::serial_session::{spawn_reader, transient_error, ConnectionSnapshot, SessionFailure};
 use crate::SerialState;
@@ -49,6 +50,8 @@ pub fn open_port(
     let _ = port.set_dtr(false);
     let _ = port.set_rts(false);
     let keep_running = session.start(port, port_name.clone())?;
+    let session_id = session.snapshot().session_id;
+    let capture = app.state::<Capture>().inner().clone();
     let recording_arc = state.recording.clone();
     let recording_app = app.clone();
     let reader_app = app.clone();
@@ -57,6 +60,7 @@ pub fn open_port(
         keep_running,
         state.failures.clone(),
         move |data| {
+            capture.serial(session_id, false, data);
             if let Ok(mut recording) = recording_arc.lock() {
                 if recording.rx(data).is_err() {
                     let _ = recording_app.emit("serial-recording-state", recording.snapshot());
@@ -147,13 +151,15 @@ pub fn write_serial(
     state: State<'_, SerialState>,
 ) -> Result<usize, String> {
     let mut port_guard = state.session.lock().map_err(|e| e.to_string())?;
-    if expected_session_id.is_some_and(|id| id != port_guard.snapshot().session_id) {
+    let session_id = port_guard.snapshot().session_id;
+    if expected_session_id.is_some_and(|id| id != session_id) {
         return Err("Sessão Serial alterada; envio não aplicado".into());
     }
 
     if let Some(port) = port_guard.connection.as_mut() {
         let bytes = content.as_bytes();
         let transfer = transmit_reported(port, bytes, |accepted| {
+            app.state::<Capture>().serial(session_id, true, accepted);
             if let Ok(mut recording) = state.recording.lock() {
                 if recording.tx(accepted).is_err() {
                     let _ = app.emit("serial-recording-state", recording.snapshot());

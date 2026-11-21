@@ -3,7 +3,7 @@ import {
   Laptop, Moon, Sun, Globe, SlidersHorizontal, 
   Terminal, Info, CheckCircle2, Github, ExternalLink 
 } from "lucide-react";
-import { open } from '@tauri-apps/plugin-shell';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
 
@@ -193,7 +193,7 @@ export function SettingsPage() {
 
                     <div className="mt-4">
                         <button 
-                            onClick={() => open("https://github.com/WigoWigo10/SerialHub")}
+                            onClick={() => openUrl("https://github.com/WigoWigo10/SerialHub")}
                             className="inline-flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
                         >
                             <Github size={16} />

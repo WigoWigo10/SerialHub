@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { BenchCaptureControls } from "../bench/BenchCaptureControls";
 import {
   Cloud,
   Wifi,
@@ -499,6 +500,7 @@ export function MqttPage() {
       className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-4 gap-4 overflow-hidden relative"
       onClick={() => setShowProfiles(false)}
     >
+      <BenchCaptureControls mqttOnly />
       {/* HEADER (Conexão e Perfis) */}
       <div
         className={`flex flex-col bg-white dark:bg-slate-900 rounded-lg shadow-sm border transition-colors duration-300 relative z-20 ${

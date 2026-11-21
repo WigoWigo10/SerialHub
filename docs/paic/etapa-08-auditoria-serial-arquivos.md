@@ -129,3 +129,9 @@ Decisões que podem exigir definição de produto, sem bloquear estas correçõe
 O xterm iniciava com as cores ANSI padrão e recebia a paleta completa do SerialHub somente na troca de tema. Ao voltar ao tema inicial, o texto colorido podia ter uma aparência diferente. A criação e a troca agora usam a mesma paleta, com ajuste de contraste do xterm configurado em 4,5:1. A troca aplica as opções à instância existente do terminal.
 
 Um teste do componente com xterm simulado reproduziu a diferença e passou após a correção. A suíte Node passou com 163 testes e `npm run build` compilou o frontend. A inspeção visual ficou pendente.
+
+## Capturas e análise sem placa
+
+Em 21/11/2026, no Windows com build de desenvolvimento Tauri e WebView2, a captura de métricas foi iniciada e encerrada pelo Dashboard. O aplicativo criou uma pasta exclusiva com `metrics.csv` e `summary.json`. Foram cinco amostras em 4,893 s, com RAM do SerialHub e de sete processos WebView2 descendentes. A CPU ficou vazia na amostra inicial e foi registrada nas seguintes. O Monitor Serial estava desconectado e a janela serviu para validar os arquivos e os contadores de processo em repouso.
+
+A gravação MQTT foi exercitada com Mosquitto local por `python -B scripts/mqtt_loopback.py --mosquitto 'C:/Program Files/mosquitto/mosquitto.exe'`. Foram gravadas 620 publicações binárias QoS 1, com tópico e bytes conferidos e zero descartes na fila. Os testes do backend cobriram o pareamento por `run` e `seq`, incluindo linha Serial dividida entre leituras, lacuna de sequência e descarte na fila. Os testes Node cobriram o enquadramento de linhas e a extração de campos numéricos para o analisador. Nenhuma porta física foi aberta. Permanecem pendentes a captura simultânea Serial/MQTT com um dispositivo e a observação dos gráficos sob tráfego Serial nativo.

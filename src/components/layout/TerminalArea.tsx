@@ -18,6 +18,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
 import { SerialPresentation, listenSafely } from "../../lib/serialPresentation";
 import toast from "react-hot-toast";
+import { SerialAnalyzer } from "../bench/SerialAnalyzer";
 
 interface ZoomFeedback {
   visible: boolean;
@@ -59,6 +60,7 @@ export function TerminalArea() {
   const fitAddonRef = useRef<FitAddon | null>(null);
   
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [showAnalyzer, setShowAnalyzer] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [zoomFeedback, setZoomFeedback] = useState<ZoomFeedback>({ visible: false, size: 14 });
   const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -311,6 +313,10 @@ export function TerminalArea() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button type="button" aria-pressed={showAnalyzer} onClick={() => setShowAnalyzer(value => !value)}
+            className="rounded px-2 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+            {t("serial_analyzer")}
+          </button>
           <div className={`flex items-center gap-1 text-xs font-bold transition-all duration-300 ${copyFeedback ? 'opacity-100 translate-y-0 text-emerald-500' : 'opacity-0 translate-y-2'}`}>
             <Check size={12} />
             <span>{t('copied')}</span>
@@ -355,16 +361,16 @@ export function TerminalArea() {
           <ZoomIn size={18} className="text-blue-500" />
           <span className="text-sm font-bold font-mono">{zoomFeedback.size}px</span>
         </div>
-      </div>
-      
-      <div className={`absolute bottom-6 right-8 transition-all duration-300 transform z-50 ${showScrollBtn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+        <div className={`absolute bottom-6 right-8 transition-all duration-300 transform z-50 ${showScrollBtn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
         <button 
             onClick={scrollToBottomSmooth} 
             className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 p-3 rounded-full shadow-lg shadow-black/20 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer pointer-events-auto"
         >
             <ArrowDown size={20} strokeWidth={2.5} />
         </button>
+        </div>
       </div>
+      {showAnalyzer && <SerialAnalyzer key={serialSessionId} />}
     </div>
   );
 }

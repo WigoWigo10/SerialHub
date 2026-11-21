@@ -126,7 +126,9 @@ test('UI and IPC wiring require explicit reviewed transport and show trust polic
   assert.ok(page.includes("'mqtt_transport_client_optional'"));
   assert.ok(!page.includes('setUseWebsockets('));
   const backend = await readFile(new URL('../src-tauri/src/commands/mqtt_cmd.rs', import.meta.url), 'utf8');
-  assert.ok(backend.indexOf('mqtt_transport::options(') < backend.indexOf('AsyncClient::new('));
+  const configureTransport = backend.indexOf('mqtt_transport::options(');
+  const buildClient = backend.indexOf('AsyncClient::builder(');
+  assert.ok(configureTransport >= 0 && buildClient > configureTransport);
   assert.ok(!backend.includes('resolve_dns_to_ipv4'));
   assert.ok(!backend.includes('port == 8883'));
 });

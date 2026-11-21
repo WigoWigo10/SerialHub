@@ -18,7 +18,7 @@ for (const [source, name] of [
   }).outputText.replace('../lib/themeTransition', './themeTransition.mjs');
   await writeFile(join(directory, name), code);
 }
-const { animateValue, normalizeRefreshRate, DASHBOARD_REFRESH_RATES, isRefreshRateAvailable, effectiveRefreshRate } =
+const { animateValue, normalizeRefreshRate, DASHBOARD_REFRESH_RATES, DASHBOARD_BAR_ANIMATION_MS, isRefreshRateAvailable, effectiveRefreshRate } =
   await import(pathToFileURL(join(directory, 'dashboardRefresh.mjs')).href);
 
 function fakeClock() {
@@ -50,8 +50,8 @@ test('numeric rates cap publication and interpolation preserves endpoints', () =
     const clock = fakeClock();
     const values = [];
     animateValue(10, 110, rate, value => values.push(value), clock);
-    for (let time = 1; time <= 500; time++) clock.tick(time);
-    assert.ok(values.length <= Math.ceil(rate / 2) + 1, `${rate}: ${values.length}`);
+    for (let time = 1; time <= DASHBOARD_BAR_ANIMATION_MS; time++) clock.tick(time);
+    assert.ok(values.length <= Math.ceil(rate * DASHBOARD_BAR_ANIMATION_MS / 1000), `${rate}: ${values.length}`);
     assert.equal(values.at(-1), 110);
     assert.ok(values.every(value => value >= 10 && value <= 110));
     assert.equal(clock.callbacks.size, 0);
@@ -75,8 +75,8 @@ test('automatic animation never exceeds the 120 Hz ceiling', () => {
   const clock = fakeClock();
   const values = [];
   animateValue(0, 100, 'auto', value => values.push(value), clock);
-  for (let time = 1; time <= 500; time++) clock.tick(time);
-  assert.ok(values.length <= 61);
+  for (let time = 1; time <= DASHBOARD_BAR_ANIMATION_MS; time++) clock.tick(time);
+  assert.ok(values.length <= Math.ceil(120 * DASHBOARD_BAR_ANIMATION_MS / 1000));
   assert.equal(values.at(-1), 100);
 });
 
@@ -85,7 +85,7 @@ test('auto follows every display callback; high rate cannot exceed display callb
     const clock = fakeClock();
     const values = [];
     animateValue(100, 0, rate, value => values.push(value), clock);
-    for (const time of [17, 34, 51, 500]) clock.tick(time);
+    for (const time of [17, 34, 51, DASHBOARD_BAR_ANIMATION_MS]) clock.tick(time);
     assert.equal(values.length, 4);
     assert.equal(values.at(-1), 0);
   }
@@ -108,6 +108,18 @@ test('unchanged values do not schedule animation', () => {
   const clock = fakeClock();
   animateValue(20, 20, 'auto', () => assert.fail('Unexpected update'), clock)();
   assert.equal(clock.callbacks.size, 0);
+});
+
+test('the memory bar settles within 160 ms and stays idle until the next sample', () => {
+  const clock = fakeClock();
+  const values = [];
+  animateValue(24, 56, 'auto', value => values.push(value), clock);
+  clock.tick(20);
+  clock.tick(160);
+  assert.equal(values.at(-1), 56);
+  assert.equal(clock.callbacks.size, 0);
+  clock.tick(500);
+  assert.equal(values.length, 2);
 });
 
 test('refresh preference defaults to automatic and is persisted by the real store', async () => {

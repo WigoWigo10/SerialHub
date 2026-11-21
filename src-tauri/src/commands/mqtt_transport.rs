@@ -1,6 +1,6 @@
 //! Explicit MQTT transport selection. Configuration errors never downgrade TLS.
-use rumqttc::tokio_rustls::rustls::{self, pki_types::CertificateDer, ClientConfig, RootCertStore};
-use rumqttc::{MqttOptions, TlsConfiguration, Transport};
+use rumqttc::{Broker, MqttOptions, TlsConfiguration, Transport};
+use rustls::{pki_types::CertificateDer, ClientConfig, RootCertStore};
 use serde::Deserialize;
 use std::{fs, io::Cursor, net::IpAddr, sync::Arc};
 
@@ -50,8 +50,11 @@ fn tls_config(
     let root_certs = if let Some(path) = ca {
         certificates(&read(path, "CA")?, "CA")?
     } else {
-        rustls_native_certs::load_native_certs()
-            .map_err(|e| format!("TLS: falha ao carregar raízes do sistema: {e}"))?
+        let native = rustls_native_certs::load_native_certs();
+        if let Some(error) = native.errors.first() {
+            return Err(format!("TLS: falha ao carregar raízes do sistema: {error}"));
+        }
+        native.certs
     };
     for cert in root_certs {
         roots
@@ -61,7 +64,11 @@ fn tls_config(
     if roots.is_empty() {
         return Err("TLS: nenhuma raiz confiável disponível; informe uma CA PEM".into());
     }
-    let builder = ClientConfig::builder().with_root_certificates(roots);
+    let builder =
+        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| format!("TLS: configuração inválida: {e}"))?
+            .with_root_certificates(roots);
     match (cert, key) {
         (Some(cert_path), Some(key_path)) => {
             let chain = certificates(
@@ -74,35 +81,14 @@ fn tls_config(
                 .ok_or(
                     "TLS: chave PEM ausente ou criptografada; use chave privada não criptografada",
                 )?;
-            // Rustls 0.22 parses the key but does not check its match to the leaf.
-            // Sign a local challenge and verify it with the certificate public key.
-            let signing = rustls::crypto::ring::sign::any_supported_type(&key)
-                .map_err(|e| format!("TLS: chave privada inválida: {e}"))?;
-            let algorithms =
-                rustls::crypto::ring::default_provider().signature_verification_algorithms;
-            let signer = signing
-                .choose_scheme(&algorithms.supported_schemes())
-                .ok_or("TLS: algoritmo da chave não suportado")?;
-            let challenge = b"SerialHub local certificate/key consistency check";
-            let signature = signer
-                .sign(challenge)
-                .map_err(|e| format!("TLS: não foi possível validar a chave: {e}"))?;
-            let leaf = webpki::EndEntityCert::try_from(&chain[0])
-                .map_err(|e| format!("TLS: certificado do cliente inválido: {e:?}"))?;
-            let matches = algorithms
-                .mapping
-                .iter()
-                .filter(|(scheme, _)| *scheme == signer.scheme())
-                .any(|(_, algs)| {
-                    algs.iter()
-                        .any(|alg| leaf.verify_signature(*alg, challenge, &signature).is_ok())
-                });
-            if !matches {
-                return Err("TLS: certificado e chave do cliente não correspondem".into());
-            }
             builder
                 .with_client_auth_cert(chain, key)
-                .map_err(|e| format!("TLS: identidade do cliente inválida: {e}"))
+                .map_err(|e| match e {
+                    rustls::Error::InconsistentKeys(rustls::InconsistentKeys::KeyMismatch) => {
+                        "TLS: certificado e chave do cliente não correspondem".into()
+                    }
+                    _ => format!("TLS: identidade do cliente inválida: {e}"),
+                })
         }
         (None, None) => Ok(builder.with_no_client_auth()),
         _ => Err("TLS: informe certificado e chave do cliente em conjunto".into()),
@@ -145,17 +131,7 @@ pub fn options(
     if !mode.secure() && (ca.is_some() || cert.is_some() || key.is_some()) {
         return Err("Há arquivos TLS configurados; selecione TLS ou WSS, ou remova explicitamente esses arquivos".into());
     }
-    let transport = match mode {
-        MqttTransport::Tcp => Transport::Tcp,
-        MqttTransport::Ws => Transport::Ws,
-        MqttTransport::Tls => Transport::Tls(TlsConfiguration::Rustls(Arc::new(tls_config(
-            ca, cert, key,
-        )?))),
-        MqttTransport::Wss => Transport::Wss(TlsConfiguration::Rustls(Arc::new(tls_config(
-            ca, cert, key,
-        )?))),
-    };
-    let endpoint = if matches!(mode, MqttTransport::Ws | MqttTransport::Wss) {
+    if matches!(mode, MqttTransport::Ws | MqttTransport::Wss) {
         let path = websocket_path.unwrap_or("/mqtt");
         if !path.starts_with('/')
             || path
@@ -169,15 +145,26 @@ pub fn options(
         } else {
             host.to_owned()
         };
-        format!(
-            "{}://{authority}:{port}{path}",
-            if mode.secure() { "wss" } else { "ws" }
-        )
-    } else {
-        host.to_owned()
-    };
-    let mut options = MqttOptions::new(client_id, endpoint, port);
-    options.set_transport(transport);
+        let invalid_url = |e| format!("Caminho WebSocket inválido: {e}");
+        if mode == MqttTransport::Wss {
+            let config = TlsConfiguration::Rustls(Arc::new(tls_config(ca, cert, key)?));
+            return MqttOptions::websocket_with_tls_config(
+                client_id,
+                format!("wss://{authority}:{port}{path}"),
+                config,
+            )
+            .map_err(invalid_url);
+        }
+        let broker =
+            Broker::websocket(format!("ws://{authority}:{port}{path}")).map_err(invalid_url)?;
+        return Ok(MqttOptions::new(client_id, broker));
+    }
+
+    let mut options = MqttOptions::new(client_id, Broker::tcp(host, port));
+    if mode == MqttTransport::Tls {
+        let config = TlsConfiguration::Rustls(Arc::new(tls_config(ca, cert, key)?));
+        options.set_transport(Transport::Tls(config));
+    }
     Ok(options)
 }
 

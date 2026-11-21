@@ -6,7 +6,7 @@
   **A high-performance, cross-platform serial monitor designed for embedded systems engineers.**
 
   [![Tauri Version](https://img.shields.io/badge/Tauri-v2.0-2496ED?logo=tauri&logoColor=white)](https://v2.tauri.app/)
-  [![Rust](https://img.shields.io/badge/Rust-1.75+-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+  [![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
   [![React](https://img.shields.io/badge/React-18.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![GitHub Stars](https://img.shields.io/github/stars/WigoWigo10/SerialHub?style=social)](https://github.com/WigoWigo10/SerialHub/stargazers)
@@ -60,8 +60,8 @@ Tailor the experience to your needs. Switch between English, Portuguese, and Spa
 ## <a name="setup"></a>🚀 Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v18+)
-- [Rust & Cargo](https://www.rust-lang.org/tools/install)
+- [Node.js](https://nodejs.org/) (^20.19.0 or >=22.12.0)
+- [Rust & Cargo](https://www.rust-lang.org/tools/install) (current stable toolchain)
 - WebView2 (Windows) or WebKitGTK (Linux)
 
 ### Installation & Development

@@ -1,17 +1,19 @@
 ﻿import { useShallow } from "zustand/react/shallow";
-import { useEffect, useState, useMemo } from "react";
+import { memo, useEffect, useState, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Cpu, MemoryStick, AlertTriangle, CheckCircle2, LayoutDashboard,
-  Layers, Zap, MonitorPlay, BrainCircuit, Battery, BatteryCharging, Plug, Bluetooth, Globe,
+  Layers, Zap, MonitorPlay, BrainCircuit, Bluetooth, Globe,
   ArrowUpCircle, ArrowDownCircle, Activity, History
 } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLanguage } from "../../hooks/useLanguage";
-import { useDashboardValue } from "../../hooks/useDashboardValue";
+import { useDashboardBar } from "../../hooks/useDashboardBar";
 import { useDisplayRefreshRate } from "../../hooks/useDisplayRefreshRate";
 import { DashboardRefreshRate, effectiveRefreshRate } from "../../lib/dashboardRefresh";
 import type { LanguageKey } from "../../i18n/translations";
+import { BenchCaptureControls } from "../bench/BenchCaptureControls";
+import { PowerCard, type PowerStatus } from "./PowerCard";
 
 interface SystemStats {
   cpu_load: number;
@@ -27,9 +29,7 @@ interface SystemStats {
   ram_details: string;
   ram_speed: number;
   npu_name: string;
-  has_battery: boolean;
-  bat_percent: number;
-  is_charging: boolean;
+  power?: PowerStatus | null;
   net_name: string;
   net_interfaces?: {
     name: string;
@@ -39,20 +39,18 @@ interface SystemStats {
   bt_detected: boolean;
 }
 
-function CpuLoadChart({ load, history, rate, caption }: { load: number; history: number[]; rate: DashboardRefreshRate; caption: string }) {
-  const animatedLoad = useDashboardValue(load, rate);
-  const displayHistory = useMemo(() => [...history.slice(0, -1), animatedLoad], [history, animatedLoad]);
+function CpuLoadChart({ load, history, caption }: { load: number; history: number[]; caption: string }) {
   const graphPath = useMemo(() => {
     const max = 100;
     const width = 100;
     const height = 40;
-    const step = width / (displayHistory.length - 1);
-    const points = displayHistory.map((val, i) => `${i * step},${height - (val / max) * height}`).join(" ");
+    const step = width / (history.length - 1);
+    const points = history.map((val, i) => `${i * step},${height - (val / max) * height}`).join(" ");
     return {
         line: `M ${points}`,
         fill: `M ${points} L 100,40 L 0,40 Z`
     };
-  }, [displayHistory]);
+  }, [history]);
 
   return (
     <div className="bg-white dark:bg-slate-900 p-0 rounded-lg border border-slate-200 dark:border-slate-800 col-span-2 overflow-hidden relative flex flex-col justify-between">
@@ -60,8 +58,8 @@ function CpuLoadChart({ load, history, rate, caption }: { load: number; history:
            <span className="text-[10px] text-slate-400 uppercase font-bold">{caption}</span>
        </div>
        <div className="absolute top-2 right-3 z-10">
-           <span className={`text-xl font-mono font-bold ${animatedLoad > 80 ? 'text-red-500' : 'text-emerald-500'}`}>
-               {animatedLoad.toFixed(1)}%
+           <span className={`text-xl font-mono font-bold ${load > 80 ? 'text-red-500' : 'text-emerald-500'}`}>
+               {load.toFixed(1)}%
            </span>
        </div>
        <div className="w-full h-16 mt-auto">
@@ -81,8 +79,8 @@ function CpuLoadChart({ load, history, rate, caption }: { load: number; history:
 }
 
 function MemoryCard({ stats, rate, t }: { stats: SystemStats; rate: DashboardRefreshRate; t: (key: LanguageKey) => string }) {
-  const animatedUsed = useDashboardValue(stats.mem_used, rate);
-  const memPercent = stats.mem_total > 0 ? (animatedUsed / stats.mem_total) * 100 : 0;
+  const memPercent = stats.mem_total > 0 ? (stats.mem_used / stats.mem_total) * 100 : 0;
+  const bar = useDashboardBar(Math.min(100, Math.max(0, memPercent)), rate);
   const formatBytes = (bytes: number) => {
     const gb = bytes / (1024 * 1024 * 1024);
     return `${gb.toFixed(1)} GB`;
@@ -108,15 +106,15 @@ function MemoryCard({ stats, rate, t }: { stats: SystemStats; rate: DashboardRef
         <div className="space-y-2">
             <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div
-                    className={`h-full ${
+                    ref={bar}
+                    className={`h-full w-full origin-left ${
                         memPercent > 85 ? 'bg-red-500' :
                         memPercent > 60 ? 'bg-orange-500' : 'bg-yellow-500'
                     }`}
-                    style={{ width: `${Math.min(100, Math.max(0, memPercent))}%` }}
                     />
                 </div>
             <div className="flex justify-between text-xs font-mono text-slate-500">
-                <span>{t('dash_ram_used')}: {formatBytes(animatedUsed)}</span>
+                <span>{t('dash_ram_used')}: {formatBytes(stats.mem_used)}</span>
                 <span>{t('dash_ram_total')}: {formatBytes(stats.mem_total)}</span>
             </div>
         </div>
@@ -124,15 +122,16 @@ function MemoryCard({ stats, rate, t }: { stats: SystemStats; rate: DashboardRef
   );
 }
 
-export function DashboardPage() {
-  const { t } = useLanguage();
-  const displayHz = useDisplayRefreshRate();
-  const refreshPreference = useSettingsStore(state => state.dashboardRefreshRate);
-  const dashboardRefreshRate = effectiveRefreshRate(refreshPreference, displayHz);
-  
-  const { 
-    connected, 
-    activePort, 
+const formatDataSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${(bytes / 1048576).toFixed(2)} MB`;
+};
+
+const SerialTelemetry = memo(function SerialTelemetry({ t }: { t: (key: LanguageKey) => string }) {
+  const {
+    connected,
+    activePort,
     connectionStartTime,
     txBytes,
     rxBytes
@@ -145,34 +144,11 @@ export function DashboardPage() {
       rxBytes: state.rxBytes,
     })),
   );
-  
-  const [stats, setStats] = useState<SystemStats>({ 
-    cpu_load: 0, mem_used: 0, mem_total: 0, cpu_freq: 0,
-    cpu_brand: "Carregando...", cpu_vendor: "", cores_phys: 0, cores_log: 0,
-    gpu_name: "-", ram_details: "-", ram_speed: 0, npu_name: "None",
-    has_battery: false, bat_percent: 0, is_charging: false, 
-    net_name: "Buscando...", bt_detected: false
-  });
-
-  const [cpuHistory, setCpuHistory] = useState<number[]>(new Array(120).fill(0));
   const [durationStr, setDurationStr] = useState("00:00:00");
 
   useEffect(() => {
-    const unlisten = listen<SystemStats>("system-stats", (event) => {
-      const newStats = event.payload;
-      setStats(newStats);
-      setCpuHistory(prev => {
-        const newHistory = [...prev, newStats.cpu_load];
-        if (newHistory.length > 120) newHistory.shift();
-        return newHistory;
-      });
-    });
-    return () => { unlisten.then(f => f()); };
-  }, []);
-
-  useEffect(() => {
     let interval: NodeJS.Timeout;
-    
+
     const updateTimer = () => {
       if (connected && connectionStartTime) {
         const diff = Math.floor((Date.now() - connectionStartTime) / 1000);
@@ -192,11 +168,83 @@ export function DashboardPage() {
     return () => clearInterval(interval);
   }, [connected, connectionStartTime]);
 
-  const formatDataSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / 1048576).toFixed(2)} MB`;
-  };
+  return (
+    <section className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800/50">
+        <div className="flex items-center gap-2 text-sm font-bold text-emerald-500 uppercase tracking-widest">
+            <Activity size={16} /> {t('dash_serial_telemetry')}
+        </div>
+
+        {connected ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-emerald-50/50 dark:bg-emerald-900/10 p-6 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                    <div className="flex items-center gap-3 mb-4">
+                        <CheckCircle2 className="text-emerald-500" size={24} />
+                        <div>
+                            <h3 className="font-bold">{activePort}</h3>
+                            <p className="text-[10px] uppercase font-bold text-emerald-600">Online</p>
+                        </div>
+                    </div>
+                    <div className="text-2xl font-mono font-bold flex items-center gap-2">
+                        <History size={20} className="text-blue-500" />
+                        {durationStr}
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400">
+                        <span>{t('dash_tx_data')}</span>
+                        <ArrowUpCircle size={16} className="text-blue-500" />
+                    </div>
+                    <div className="text-2xl font-mono font-bold mt-2">{formatDataSize(txBytes)}</div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+                    <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400">
+                        <span>{t('dash_rx_data')}</span>
+                        <ArrowDownCircle size={16} className="text-emerald-500" />
+                    </div>
+                    <div className="text-2xl font-mono font-bold mt-2">{formatDataSize(rxBytes)}</div>
+                </div>
+            </div>
+        ) : (
+            <div className="bg-slate-50 dark:bg-slate-900/20 p-6 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-center opacity-50">
+                <AlertTriangle size={24} className="mb-2" />
+                <h3 className="font-bold text-sm">{t('dash_no_connection')}</h3>
+            </div>
+        )}
+    </section>
+  );
+});
+
+export function DashboardPage() {
+  const { t } = useLanguage();
+  const displayHz = useDisplayRefreshRate();
+  const refreshPreference = useSettingsStore(state => state.dashboardRefreshRate);
+  const dashboardRefreshRate = effectiveRefreshRate(refreshPreference, displayHz);
+
+  const [stats, setStats] = useState<SystemStats>({
+    cpu_load: 0, mem_used: 0, mem_total: 0, cpu_freq: 0,
+    cpu_brand: "Carregando...", cpu_vendor: "", cores_phys: 0, cores_log: 0,
+    gpu_name: "-", ram_details: "-", ram_speed: 0, npu_name: "None",
+    power: null,
+    net_name: "Buscando...", bt_detected: false
+  });
+
+  const [cpuHistory, setCpuHistory] = useState<number[]>(new Array(120).fill(0));
+
+  useEffect(() => {
+    const unlisten = listen<SystemStats>("system-stats", (event) => {
+      const newStats = event.payload;
+      setStats(newStats);
+      setCpuHistory(prev => {
+        const newHistory = [...prev, newStats.cpu_load];
+        if (newHistory.length > 120) newHistory.shift();
+        return newHistory;
+      });
+    });
+    return () => { unlisten.then(f => f()); };
+  }, []);
+
   const formatNetworkRate = (rate: number | null) => rate === null ? "—" : `${formatDataSize(Math.round(rate))}/s`;
 
   //const getLoadColor = (value: number) => {
@@ -204,12 +252,6 @@ export function DashboardPage() {
     //if (value > 50) return "text-yellow-500";
     //return "text-emerald-500";
   //};
-
-  const getBatteryColor = (percent: number) => {
-      if (percent < 20) return "text-red-500 bg-red-100 dark:bg-red-900/20";
-      if (percent < 50) return "text-yellow-500 bg-yellow-100 dark:bg-yellow-900/20";
-      return "text-emerald-500 bg-emerald-100 dark:bg-emerald-900/20";
-  };
 
   const gpus = stats.gpus ?? (stats.gpu_name && stats.gpu_name !== "-"
     ? [{ name: stats.gpu_name, kind: "unknown" as const }] : []);
@@ -230,8 +272,9 @@ export function DashboardPage() {
                         {t('dash_subtitle')}
                     </p>
             </div>
-            <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-500">
-                v1.2.1
+            <div className="min-w-0 space-y-2">
+                <span className="inline-block px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-500">v1.2.1</span>
+                <BenchCaptureControls />
             </div>
         </div>
 
@@ -267,7 +310,7 @@ export function DashboardPage() {
                             <Layers size={16} className="text-blue-500" /> {stats.cores_log}
                         </div>
                      </div>
-                     <CpuLoadChart load={stats.cpu_load} history={cpuHistory} rate={dashboardRefreshRate} caption={t('dash_realtime_load')} />
+                     <CpuLoadChart load={stats.cpu_load} history={cpuHistory} caption={t('dash_realtime_load')} />
                 </div>
             </div>
         </section>
@@ -318,32 +361,8 @@ export function DashboardPage() {
                 <Zap size={16} /> {t('dash_power_title')}
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* POWER CARD */}
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-full ${stats.has_battery ? getBatteryColor(stats.bat_percent) : "bg-slate-100 text-slate-400 dark:bg-slate-800"}`}>
-                            {stats.has_battery ? (stats.is_charging ? <BatteryCharging size={24} /> : <Battery size={24} />) : <Plug size={24} />}
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-sm text-slate-700 dark:text-slate-200">
-                                {stats.has_battery ? t('dash_battery') : t('dash_ac_power')}
-                            </h3>
-                            <p className="text-xs text-slate-500">
-                                {stats.has_battery 
-                                    ? (stats.is_charging ? t('dash_charging') : t('dash_discharging')) 
-                                    : "Desktop / AC"
-                                }
-                            </p>
-                        </div>
-                    </div>
-                    {stats.has_battery && (
-                        <div className="text-right">
-                            <span className="text-2xl font-bold font-mono">{stats.bat_percent}%</span>
-                        </div>
-                    )}
-                </div>
+            <div className="grid items-start grid-cols-1 md:grid-cols-2 gap-6">
+                <PowerCard status={stats.power} t={t} />
 
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-center space-y-4">
                     <div className="flex flex-col gap-2">
@@ -381,50 +400,7 @@ export function DashboardPage() {
             </div>
         </section>
 
-        <section className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800/50">
-            <div className="flex items-center gap-2 text-sm font-bold text-emerald-500 uppercase tracking-widest">
-                <Activity size={16} /> {t('dash_serial_telemetry')}
-            </div>
-            
-            {connected ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-emerald-50/50 dark:bg-emerald-900/10 p-6 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
-                        <div className="flex items-center gap-3 mb-4">
-                            <CheckCircle2 className="text-emerald-500" size={24} />
-                            <div>
-                                <h3 className="font-bold">{activePort}</h3>
-                                <p className="text-[10px] uppercase font-bold text-emerald-600">Online</p>
-                            </div>
-                        </div>
-                        <div className="text-2xl font-mono font-bold flex items-center gap-2">
-                            <History size={20} className="text-blue-500" />
-                            {durationStr}
-                        </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
-                        <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400">
-                            <span>{t('dash_tx_data')}</span>
-                            <ArrowUpCircle size={16} className="text-blue-500" />
-                        </div>
-                        <div className="text-2xl font-mono font-bold mt-2">{formatDataSize(txBytes)}</div>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
-                        <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400">
-                            <span>{t('dash_rx_data')}</span>
-                            <ArrowDownCircle size={16} className="text-emerald-500" />
-                        </div>
-                        <div className="text-2xl font-mono font-bold mt-2">{formatDataSize(rxBytes)}</div>
-                    </div>
-                </div>
-            ) : (
-                <div className="bg-slate-50 dark:bg-slate-900/20 p-6 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-center opacity-50">
-                    <AlertTriangle size={24} className="mb-2" />
-                    <h3 className="font-bold text-sm">{t('dash_no_connection')}</h3>
-                </div>
-            )}
-        </section>
+        <SerialTelemetry t={t} />
       </div>
     </div>
   );

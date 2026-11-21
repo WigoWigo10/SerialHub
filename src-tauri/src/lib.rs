@@ -24,14 +24,6 @@ struct Win32_PhysicalMemory {
 #[allow(non_camel_case_types)]
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
-struct Win32_Battery {
-    estimated_charge_remaining: u16,
-    battery_status: u16,
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "PascalCase")]
 struct Win32_NetworkAdapter {
     name: String,
     net_connection_status: Option<u16>,
@@ -49,7 +41,9 @@ pub struct SerialState {
 mod serial_session;
 mod mqtt_session;
 mod serial_recording;
+mod bench_capture;
 mod hardware;
+mod power;
 mod display;
 
 mod commands {
@@ -63,10 +57,9 @@ use commands::mqtt_cmd;
 pub fn run() {
     let (failures, failure_receiver) = std::sync::mpsc::channel();
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         // .plugin(tauri_plugin_bluetooth::init()) // Desativado temporariamente
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .manage(SerialState {
             session: Arc::new(Mutex::new(serial_session::SerialSession::default())),
             failures,
@@ -76,13 +69,18 @@ pub fn run() {
             rx_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
         .manage(mqtt_cmd::MqttState::default()) // <--- INICIALIZA O ESTADO MQTT
+        .manage(bench_capture::Capture::default())
 
         .setup(move |app| {
             let mqtt_notifier = app.handle().clone();
+            let mqtt_capture = app.state::<bench_capture::Capture>().inner().clone();
             app.state::<mqtt_cmd::MqttState>().service.set_notifier(move |notice| {
                 match notice {
                     mqtt_session::Notice::State(snapshot) => { let _ = mqtt_notifier.emit("mqtt-state", snapshot); }
-                    mqtt_session::Notice::Message(message) => { let _ = mqtt_notifier.emit("mqtt-message", message); }
+                    mqtt_session::Notice::Message(message) => {
+                        mqtt_capture.mqtt(&message);
+                        let _ = mqtt_notifier.emit("mqtt-message", message);
+                    }
                 }
             });
             let state = app.state::<SerialState>();
@@ -104,10 +102,8 @@ pub fn run() {
                 let mut npu_name = "None".to_string();
                 let mut net_adapter_name = "Ethernet/WiFi".to_string();
                 let mut bt_detected = false;
-                let mut last_battery_refresh = std::time::Instant::now() - Duration::from_secs(10);
-                let mut bat_percent = 0;
-                let mut is_charging = false;
-                let mut has_battery = false;
+                let mut last_power_refresh = Instant::now();
+                let mut power_status = power::read_status();
 
                 #[cfg(target_os = "windows")]
                 {
@@ -188,24 +184,9 @@ pub fn run() {
                     let cpu_brand = if !cpus.is_empty() { cpus[0].brand().to_string() } else { "".to_string() };
                     let cpu_vendor = if !cpus.is_empty() { cpus[0].vendor_id().to_string() } else { "".to_string() };
 
-                    // BATERIA (Windows Only)
-                    #[cfg(target_os = "windows")]
-                    if last_battery_refresh.elapsed() >= Duration::from_secs(10)
-                    {
-                        last_battery_refresh = std::time::Instant::now();
-                        use wmi::{COMLibrary, WMIConnection};
-                        if let Ok(com) = COMLibrary::new() {
-                            if let Ok(wmi) = WMIConnection::new(com) {
-                                if let Ok(res) = wmi.query::<Win32_Battery>() {
-                                    if let Some(bat) = res.first() {
-                                        has_battery = true;
-                                        bat_percent = bat.estimated_charge_remaining;
-                                        // Status 2 = AC, 6,7,8,9 = Charging
-                                        is_charging = bat.battery_status == 2 || bat.battery_status >= 6;
-                                    }
-                                }
-                            }
-                        }
+                    if last_power_refresh.elapsed() >= Duration::from_secs(2) {
+                        last_power_refresh = Instant::now();
+                        power_status = power::read_status();
                     }
 
                     let payload = serde_json::json!({
@@ -222,9 +203,10 @@ pub fn run() {
                         "ram_details": ram_details,
                         "ram_speed": ram_speed,
                         "npu_name": npu_name,
-                        "has_battery": has_battery,
-                        "bat_percent": bat_percent,
-                        "is_charging": is_charging,
+                        "power": power_status,
+                        "has_battery": power_status.and_then(|status| status.battery_present).unwrap_or(false),
+                        "bat_percent": power_status.and_then(|status| status.percent).unwrap_or(0),
+                        "is_charging": power_status.and_then(|status| status.charging).unwrap_or(false),
                         "net_name": net_adapter_name,
                         "net_interfaces": network_traffic,
                         "bt_detected": bt_detected
@@ -256,6 +238,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             display::display_refresh_rate,
+            bench_capture::bench_capture_status,
+            bench_capture::start_bench_capture,
+            bench_capture::stop_bench_capture,
             // Serial Port Commands
             commands::serial_cmd::list_ports,
             commands::serial_cmd::open_port,
@@ -293,6 +278,9 @@ pub fn run() {
                     let _ = state.failures.send(serial_session::SessionFailure::Shutdown);
                     let worker = state.cleanup_worker.lock().ok().and_then(|mut worker| worker.take());
                     if let Some(worker) = worker { let _ = worker.join(); }
+                }
+                if let Some(capture) = app.try_state::<bench_capture::Capture>() {
+                    if let Err(error) = capture.shutdown() { eprintln!("{error}"); }
                 }
             }
         });

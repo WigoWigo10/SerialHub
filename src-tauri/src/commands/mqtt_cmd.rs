@@ -1,7 +1,6 @@
 use super::mqtt_transport::{self, MqttTransport};
 use crate::mqtt_session::{self, MqttService, SessionIo, Snapshot};
-use rumqttc::{AsyncClient, LastWill};
-use std::time::Duration;
+use rumqttc::{AsyncClient, LastWill, PublishOptions};
 use tauri::State;
 
 #[derive(Default)]
@@ -60,7 +59,7 @@ pub fn connect_mqtt(
                 key_path.as_deref(),
                 websocket_path.as_deref(),
             )?;
-            mqttoptions.set_keep_alive(Duration::from_secs(5));
+            mqttoptions.set_keep_alive(5);
             mqttoptions.set_max_packet_size(1024 * 1024, 1024 * 1024);
             if let (Some(topic), Some(payload), Some(qos)) = (lwt_topic, lwt_payload, lwt_qos) {
                 if !topic.is_empty() {
@@ -75,7 +74,10 @@ pub fn connect_mqtt(
             if let (Some(username), Some(password)) = (username, password) {
                 mqttoptions.set_credentials(username, password);
             }
-            let (client, events) = AsyncClient::new(mqttoptions, 100);
+            let (client, events) = AsyncClient::builder(mqttoptions)
+                .capacity(100)
+                .try_build()
+                .map_err(|error| format!("Configuração MQTT inválida: {error}"))?;
             Ok(SessionIo {
                 client,
                 events: Box::new(events),
@@ -110,7 +112,11 @@ pub fn publish_mqtt(
     retain: bool,
 ) -> Result<(), String> {
     state.service.operation(expected_session_id, |client| {
-        client.try_publish(topic, mqtt_session::qos(qos), retain, payload.into_bytes())
+        client.try_publish(
+            topic,
+            payload.into_bytes(),
+            PublishOptions::new(mqtt_session::qos(qos)).retain(retain),
+        )
     })
 }
 

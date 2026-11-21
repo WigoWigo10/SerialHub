@@ -22,6 +22,7 @@ import { connectionAction, recordingAction, suggestSerialLogName, toggleRecordin
 import { listenSafely } from "../../lib/serialPresentation";
 import toast from "react-hot-toast";
 import { SerialPortInfo as SerialPort, serialPortPresentation } from "../../lib/serialPorts";
+import { hasUsbVendorId, loadUsbIdCatalog, type UsbIdCatalog } from "../../lib/usbIds";
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
 
@@ -32,15 +33,16 @@ function portIcon(type: string) {
   return <HelpCircle size={18} />;
 }
 
-function PortButton({ port, activePort, onConnect, t, disabled }: {
+function PortButton({ port, activePort, onConnect, t, disabled, usbCatalog }: {
   disabled?: boolean;
   port: SerialPort;
   activePort: string | null;
   onConnect: (name: string) => void;
   t: (key: any) => string;
+  usbCatalog?: UsbIdCatalog;
 }) {
   const isActive = activePort === port.port_name;
-  const presentation = serialPortPresentation(port, t);
+  const presentation = serialPortPresentation(port, t, usbCatalog);
 
   return (
     <button
@@ -63,26 +65,20 @@ function PortButton({ port, activePort, onConnect, t, disabled }: {
       </div>
 
       <div className="overflow-hidden flex-1 min-w-0">
-        <div className="flex justify-between items-baseline">
+        <div className="flex flex-wrap items-baseline gap-x-2">
           <span className={`font-mono text-sm font-bold truncate ${isActive ? "text-emerald-700 dark:text-green-400" : "text-slate-700 dark:text-slate-200"}`}>
             {port.port_name}
           </span>
-          {port.port_type === "USB" && (
-            <span className="text-[9px] text-slate-400 dark:text-slate-600 font-mono ml-1 hidden group-hover:inline-block">
-              {port.vid}:{port.pid}
+          {isActive && (
+            <span className="text-[10px] text-emerald-700 dark:text-green-400 font-medium">
+              ● {t("connected_status")}
             </span>
           )}
         </div>
 
-        <div className="text-[10px] text-slate-500 truncate" title={presentation.description}>
-          {isActive ? (
-            <span className="text-emerald-600 dark:text-green-500 font-medium animate-pulse">
-              ● {t("connected_status")}
-            </span>
-          ) : (
-            presentation.description
-          )}
-        </div>
+        {(!isActive || port.port_type === "USB") && (
+          <div className="text-xs text-slate-600 dark:text-slate-400 truncate">{presentation.description}</div>
+        )}
       </div>
     </button>
   );
@@ -92,6 +88,18 @@ export function Sidebar() {
   const { t } = useLanguage();
 
   const [ports, setPorts] = useState<SerialPort[]>([]);
+  const [usbCatalog, setUsbCatalog] = useState<UsbIdCatalog>();
+  const needsUsbCatalog = ports.some(port => port.port_type === "USB" && hasUsbVendorId(port.vid));
+  useEffect(() => {
+    if (!needsUsbCatalog) return;
+    let current = true;
+    loadUsbIdCatalog().then(catalog => {
+      if (current) setUsbCatalog(catalog);
+    }).catch(() => {
+      // Descriptors and the built-in matches remain usable if the asset fails to load.
+    });
+    return () => { current = false; };
+  }, [needsUsbCatalog]);
   const [scanning, setScanning] = useState(false);
   const parameters = useSettingsStore(state => state.serialParameters);
   const serialOperationPending = useSettingsStore(state => state.serialOperationPending);
@@ -401,6 +409,7 @@ export function Sidebar() {
             activePort={activePort} disabled={serialOperationPending}
             onConnect={handleConnect}
             t={t}
+            usbCatalog={usbCatalog}
           />
         ))}
 

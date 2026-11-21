@@ -32,8 +32,8 @@ impl From<serialport::SerialPortInfo> for SerialPortInfo {
             SerialPortType::UsbPort(info) => {
                 result.vid = format!("{:04x}", info.vid);
                 result.pid = format!("{:04x}", info.pid);
-                result.manufacturer = info.manufacturer.unwrap_or_default();
-                result.product = info.product.unwrap_or_default();
+                result.manufacturer = usb_name(info.manufacturer);
+                result.product = usb_name(info.product);
                 "USB"
             }
             SerialPortType::BluetoothPort => "Bluetooth",
@@ -43,6 +43,15 @@ impl From<serialport::SerialPortInfo> for SerialPortInfo {
         .to_string();
         result
     }
+}
+
+fn usb_name(value: Option<String>) -> String {
+    let mut name = value.unwrap_or_default();
+    if let Some(terminator) = name.find('\0') {
+        // Registry strings can include leftover buffer data after the terminator.
+        name.truncate(name[..terminator].trim_end().len());
+    }
+    name
 }
 
 /// Enumerate without opening ports, preserving the OS/library ordering.
@@ -89,6 +98,24 @@ mod tests {
                 "pid": "cdef", "manufacturer": "Fabricante", "product": "Sensor"
             })
         );
+    }
+
+    #[test]
+    fn usb_names_stop_at_first_nul_even_when_driver_returns_trailing_data() {
+        let info = SerialPortInfo::from(port(
+            "COM56",
+            SerialPortType::UsbPort(UsbPortInfo {
+                vid: 0x04e8,
+                pid: 0x6860,
+                serial_number: None,
+                manufacturer: Some("SAMSUNG Electronics Co., Ltd. \0tronics Co., Ltd. ".into()),
+                product: Some("Módem USB\0stale data".into()),
+            }),
+        ));
+        assert_eq!(info.manufacturer, "SAMSUNG Electronics Co., Ltd.");
+        assert_eq!(info.product, "Módem USB");
+        assert_eq!(info.vid, "04e8");
+        assert_eq!(info.pid, "6860");
     }
 
     #[test]
